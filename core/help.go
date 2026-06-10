@@ -36,7 +36,7 @@ func NewHelp() (*Help, error) {
 	return h, nil
 }
 
-func (h *Help) AddCommand(cmd, category, cmd_help, info string, layer int, completer *readline.PrefixCompleter) {
+func (h *Help) AddCommand(cmd string, category string, cmd_help string, info string, layer int, completer *readline.PrefixCompleter) {
 	if _, ok := h.cmds[category]; !ok {
 		h.cmds[category] = []string{}
 		h.categories = append(h.categories, category)
@@ -52,7 +52,7 @@ func (h *Help) AddCommand(cmd, category, cmd_help, info string, layer int, compl
 	h.cmd_completer[cmd] = completer
 }
 
-func (h *Help) AddSubCommand(cmd string, sub_cmds []string, sub_disp, cmd_help string) {
+func (h *Help) AddSubCommand(cmd string, sub_cmds []string, sub_disp string, cmd_help string) {
 	if subm, ok := h.sub_cmds[cmd]; ok {
 		subm[sub_disp] = cmd_help
 	}
@@ -107,7 +107,7 @@ func (h *Help) Print(layer int) {
 				if layer&h.cmd_layers[cmd] != 0 {
 					pcmd = lb.Sprint(cmd)
 				}
-				line_help := h.line_help[cmd]
+				line_help, _ := h.line_help[cmd]
 				rows = append(rows, pcmd)
 				vals = append(vals, line_help)
 			}
@@ -130,17 +130,17 @@ func (h *Help) PrintBrief(cmd string) error {
 			n_line := 0
 			var out_info []rune
 			out_info = append(out_info, ' ')
-			for _, r := range cmd_info {
-				switch {
-				case r == ' ' && n_line > max_line:
+			r_info := []rune(cmd_info)
+			for _, r := range r_info {
+				if r == ' ' && n_line > max_line {
 					out_info = append(out_info, '\n')
 					n_line = 0
-
-				case r == '\n':
-					out_info = append(out_info, '\n', ' ')
+				} else if r == '\n' {
+					out_info = append(out_info, '\n')
+					out_info = append(out_info, ' ')
 					n_line = 0
-
-				default:
+					continue
+				} else {
 					n_line++
 				}
 				out_info = append(out_info, r)

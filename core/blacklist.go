@@ -2,37 +2,24 @@ package core
 
 import (
 	"bufio"
-	"encoding/json"
-	"io/ioutil"
+	"fmt"
 	"net"
-	"net/http"
 	"os"
 	"strings"
 
 	"github.com/kgretzky/evilginx2/log"
 )
 
-const (
-	BLACKLIST_MODE_FULL   = 0
-	BLACKLIST_MODE_UNAUTH = 1
-	BLACKLIST_MODE_OFF    = 2
-)
-
-var (
-	BOTS  = []string{}
-	HOSTS = []string{}
-)
-
 type BlockIP struct {
-	ipv4 net.IP
-	mask *net.IPNet
+	parsedIP net.IP
+	mask     *net.IPNet
 }
 
 type Blacklist struct {
 	ips        map[string]*BlockIP
 	masks      []*BlockIP
 	configPath string
-	mode       int
+	verbose    bool
 }
 
 func NewBlacklist(path string) (*Blacklist, error) {
@@ -45,7 +32,7 @@ func NewBlacklist(path string) (*Blacklist, error) {
 	bl := &Blacklist{
 		ips:        make(map[string]*BlockIP),
 		configPath: path,
-		mode:       BLACKLIST_MODE_OFF,
+		verbose:    true,
 	}
 
 	fs := bufio.NewScanner(f)
@@ -61,16 +48,16 @@ func NewBlacklist(path string) (*Blacklist, error) {
 
 		if len(l) > 0 {
 			if strings.Contains(l, "/") {
-				ipv4, mask, err := net.ParseCIDR(l)
+				parsedIP, mask, err := net.ParseCIDR(l)
 				if err == nil {
-					bl.masks = append(bl.masks, &BlockIP{ipv4: ipv4, mask: mask})
+					bl.masks = append(bl.masks, &BlockIP{parsedIP: parsedIP, mask: mask})
 				} else {
 					log.Error("blacklist: invalid ip/mask address: %s", l)
 				}
 			} else {
-				ipv4 := net.ParseIP(l)
-				if ipv4 != nil {
-					bl.ips[ipv4.String()] = &BlockIP{ipv4: ipv4, mask: nil}
+				parsedIP := net.ParseIP(l)
+				if parsedIP != nil {
+					bl.ips[parsedIP.String()] = &BlockIP{parsedIP: parsedIP, mask: nil}
 				} else {
 					log.Error("blacklist: invalid ip address: %s", l)
 				}
@@ -78,147 +65,93 @@ func NewBlacklist(path string) (*Blacklist, error) {
 		}
 	}
 
-	log.Info("blacklist: loaded %d ip addresses or ip masks", len(bl.ips)+len(bl.masks))
+	log.Info("blacklist: loaded %d ip addresses and %d ip masks", len(bl.ips), len(bl.masks))
 	return bl, nil
 }
 
-func BOT_HOST(path string) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0644)
+func (bl *Blacklist) GetStats() (int, int) {
+	return len(bl.ips), len(bl.masks)
+}
+
+func (bl *Blacklist) AddIP(ip string) error {
+	if bl.IsBlacklisted(ip) {
+		return nil
+	}
+
+	parsedIP := net.ParseIP(ip)
+	if parsedIP != nil {
+		bl.ips[parsedIP.String()] = &BlockIP{parsedIP: parsedIP, mask: nil}
+	} else {
+		return fmt.Errorf("invalid ip address: %s", ip)
+	}
+
+	// write to file
+	f, err := os.OpenFile(bl.configPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return
+		return err
 	}
 	defer f.Close()
 
-	fs := bufio.NewScanner(f)
-	fs.Split(bufio.ScanLines)
-
-	for fs.Scan() {
-		l := fs.Text()
-		// remove comments
-		if n := strings.Index(l, ";"); n > -1 {
-			l = l[:n]
-		}
-		l = strings.Trim(l, " ")
-
-		if len(l) > 0 {
-			HOSTS = append(HOSTS, l)
-		}
-	}
-
-	log.Info("blacklist: loaded %d bad hostname", len(HOSTS))
-}
-
-func BOT_UserAgent(path string) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0644)
+	_, err = f.WriteString(parsedIP.String() + "\n")
 	if err != nil {
-		return
-	}
-	defer f.Close()
-
-	fs := bufio.NewScanner(f)
-	fs.Split(bufio.ScanLines)
-
-	for fs.Scan() {
-		l := fs.Text()
-		// remove comments
-		if n := strings.Index(l, ";"); n > -1 {
-			l = l[:n]
-		}
-		l = strings.Trim(l, " ")
-
-		if len(l) > 0 {
-			BOTS = append(BOTS, l)
-		}
+		return err
 	}
 
-	log.Info("blacklist: loaded %d bots useragent", len(BOTS))
-}
-
-func (bl *Blacklist) IsBlacklistedAgent(ua string) bool {
-	for _, bot := range BOTS {
-		if bot != "" && strings.Contains(ua, bot) {
-			return true
-		}
-	}
-	return false
-}
-
-func (bl *Blacklist) IsBlacklistedHost(bot_host string) bool {
-	for _, host := range HOSTS {
-		if host != "" && strings.Contains(bot_host, host) {
-			return true
-		}
-	}
-	return false
+	return nil
 }
 
 func (bl *Blacklist) IsBlacklisted(ip string) bool {
-	if ip == "127.0.0.1" {
-		return false
-	}
-	ipv4 := net.ParseIP(ip)
-	if ipv4 == nil {
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
 		return false
 	}
 
-	if _, ok := bl.ips[ip]; ok {
+	if _, ok := bl.ips[parsedIP.String()]; ok {
 		return true
 	}
 	for _, m := range bl.masks {
-		if m.mask != nil && m.mask.Contains(ipv4) {
+		if m.mask != nil && m.mask.Contains(parsedIP) {
 			return true
 		}
 	}
 	return false
 }
 
-
-// AddToBlacklist auto-adds a blocked IP to the blacklist file and in-memory map
-func (bl *Blacklist) AddToBlacklist(ip string) {
-	if ip == "" || ip == "127.0.0.1" {
-		return
-	}
-	// Already blacklisted
-	if _, ok := bl.ips[ip]; ok {
-		return
-	}
-	ipv4 := net.ParseIP(ip)
-	if ipv4 == nil {
-		return
-	}
-	bl.ips[ipv4.String()] = &BlockIP{ipv4: ipv4, mask: nil}
-
-	// Append to blacklist.txt
-	if bl.configPath != "" {
-		f, err := os.OpenFile(bl.configPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-		if err == nil {
-			f.WriteString(ip + "\n")
-			f.Close()
-		}
-	}
+func (bl *Blacklist) SetVerbose(verbose bool) {
+	bl.verbose = verbose
 }
 
-func (bl *Blacklist) GetISP(ipaddress string) string {
-	url := "https://ipinfo.io/" + ipaddress + "/json"
-	resp, err := http.Get(url)
-	if err != nil {
-		log.Fatal("Error: %s", err)
-		return "nil"
-	}
+func (bl *Blacklist) IsVerbose() bool {
+	return bl.verbose
+}
 
-	defer resp.Body.Close()
+func (bl *Blacklist) IsWhitelisted(ip string) bool {
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		return false
+	}
+	if parsedIP.IsLoopback() {
+		return true
+	}
+	return false
+}
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal("Error: %s", err)
-		return "nil"
+// Clear removes all runtime blacklisted IPs (does not modify the file)
+func (bl *Blacklist) Clear() int {
+	count := len(bl.ips)
+	bl.ips = make(map[string]*BlockIP)
+	return count
+}
+
+// RemoveIP removes a specific IP from the blacklist
+func (bl *Blacklist) RemoveIP(ip string) bool {
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		return false
 	}
-	in := []byte(string(body))
-	var raw map[string]interface{}
-	if err := json.Unmarshal(in, &raw); err != nil {
-		log.Fatal("Error: %s", err)
-		return "nil"
+	if _, ok := bl.ips[parsedIP.String()]; ok {
+		delete(bl.ips, parsedIP.String())
+		return true
 	}
-	out, _ := json.Marshal(raw["org"])
-	return string(out)
+	return false
 }

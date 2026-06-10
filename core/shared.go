@@ -1,10 +1,20 @@
 package core
 
-func combineHost(sub, domain string) string {
+import "strings"
+
+func combineHost(sub string, domain string) string {
 	if sub == "" {
 		return domain
 	}
 	return sub + "." + domain
+}
+
+func obfuscateDots(s string) string {
+	return strings.Replace(s, ".", "[[d0t]]", -1)
+}
+
+func removeObfuscatedDots(s string) string {
+	return strings.Replace(s, "[[d0t]]", ".", -1)
 }
 
 func stringExists(s string, sa []string) bool {
@@ -23,6 +33,15 @@ func intExists(i int, ia []int) bool {
 		}
 	}
 	return false
+}
+
+func removeString(s string, sa []string) []string {
+	for i, k := range sa {
+		if s == k {
+			return append(sa[:i], sa[i+1:]...)
+		}
+	}
+	return sa
 }
 
 func truncateString(s string, maxLen int) string {

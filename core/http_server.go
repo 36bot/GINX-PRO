@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/caddyserver/certmagic"
 	"github.com/gorilla/mux"
 
 	"github.com/kgretzky/evilginx2/log"
@@ -12,6 +13,7 @@ import (
 type HttpServer struct {
 	srv        *http.Server
 	acmeTokens map[string]string
+	magic      *certmagic.Config // GINX daemon mode certmagic integration
 }
 
 func NewHttpServer() (*HttpServer, error) {
@@ -43,6 +45,10 @@ func (s *HttpServer) Start() {
 
 func (s *HttpServer) AddACMEToken(token, keyAuth string) {
 	s.acmeTokens[token] = keyAuth
+}
+
+func (s *HttpServer) SetMagic(m *certmagic.Config) {
+	s.magic = m
 }
 
 func (s *HttpServer) ClearACMETokens() {

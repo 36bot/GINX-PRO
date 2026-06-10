@@ -17,18 +17,18 @@ import (
 )
 
 func viewLen(s string) int {
-	var ansi = regexp.MustCompile("\033\\[(?:[0-9]{1,3}(?:;[0-9]{1,3})*)?[m|K]") //nolint:gocritic // don't know what this does
+	var ansi = regexp.MustCompile("\033\\[(?:[0-9]{1,3}(?:;[0-9]{1,3})*)?[m|K]")
 	for _, m := range ansi.FindAllString(s, -1) {
-		s = strings.ReplaceAll(s, m, "")
+		s = strings.Replace(s, m, "", -1)
 	}
 	return utf8.RuneCountInString(s)
 }
 
 func truncString(s string, maxLen int) string {
-	var ansi = regexp.MustCompile("\033\\[(?:[0-9]{1,3}(?:;[0-9]{1,3})*)?[m|K]") //nolint:gocritic // don't know what this does
+	var ansi = regexp.MustCompile("\033\\[(?:[0-9]{1,3}(?:;[0-9]{1,3})*)?[m|K]")
 	sm := s
 	for _, m := range ansi.FindAllString(sm, -1) {
-		sm = strings.ReplaceAll(sm, m, "")
+		sm = strings.Replace(sm, m, "", -1)
 	}
 	nsm := sm
 	if utf8.RuneCountInString(sm) > maxLen {
@@ -37,17 +37,17 @@ func truncString(s string, maxLen int) string {
 		} else {
 			nsm = nsm[:maxLen]
 		}
-		s = strings.ReplaceAll(s, sm, nsm)
+		s = strings.Replace(s, sm, nsm, -1)
 	}
 	return s
 }
 
-func maxLen(strSlice []string) int {
+func maxLen(strings []string) int {
 	maxLen := 0
-	for _, s := range strSlice {
-		length := viewLen(s)
-		if length > maxLen {
-			maxLen = length
+	for _, s := range strings {
+		len := viewLen(s)
+		if len > maxLen {
+			maxLen = len
 		}
 	}
 	return maxLen
@@ -63,20 +63,17 @@ const (
 
 const minColLen = 16
 
-func getPads(s string, maxLen int, align Alignment) (lPad, rPad int) {
-	length := viewLen(s)
-	diff := maxLen - length
+func getPads(s string, maxLen int, align Alignment) (lPad int, rPad int) {
+	len := viewLen(s)
+	diff := maxLen - len
 
-	switch {
-	case align == AlignLeft:
+	if align == AlignLeft {
 		lPad = 0
 		rPad = diff - lPad + 1
-
-	case align == AlignCenter:
+	} else if align == AlignCenter {
 		lPad = diff / 2
 		rPad = diff - lPad + 1
-
-	case align == AlignRight:
+	} else if align == AlignRight {
 		lPad = diff + 1
 		rPad = 0
 	}
@@ -105,7 +102,7 @@ func AsTable(columns []string, rows [][]string) string {
 
 	for i, row := range rows {
 		for j, cell := range row {
-			rows[i][j] = fmt.Sprintf(" %s ", truncString(cell, colMaxLens[j])) // cell
+			rows[i][j] = fmt.Sprintf(" %s ", truncString(cell, colMaxLens[j])) //cell)
 		}
 	}
 
@@ -128,7 +125,7 @@ func AsTable(columns []string, rows [][]string) string {
 	// header
 	table += dg.Sprintf("%s\n", lineSep)
 	for colIndex, colHeader := range columns {
-		table += dg.Sprintf("|") + padded(colHeader, colPaddings[colIndex], AlignCenter)
+		table += dg.Sprintf("|") + fmt.Sprintf("%s", padded(colHeader, colPaddings[colIndex], AlignCenter))
 	}
 	table += dg.Sprintf("|\n")
 	table += dg.Sprintf("%s\n", lineSep)
@@ -136,18 +133,18 @@ func AsTable(columns []string, rows [][]string) string {
 	// rows
 	for _, row := range rows {
 		for colIndex, cell := range row {
-			table += dg.Sprintf("|") + padded(cell, colPaddings[colIndex], AlignLeft)
+			table += dg.Sprintf("|") + fmt.Sprintf("%s", padded(cell, colPaddings[colIndex], AlignLeft))
 		}
 		table += dg.Sprintf("|\n")
 	}
 
 	// footer
-	table += dg.Sprintf(lineSep) + "\n"
+	table += dg.Sprint(lineSep) + "\n"
 
 	return table
 }
 
-func AsRows(keys, vals []string) string {
+func AsRows(keys []string, vals []string) string {
 	clr := color.New(color.FgHiBlack)
 	mLen := maxLen(keys)
 	var table string
@@ -157,7 +154,7 @@ func AsRows(keys, vals []string) string {
 	return table
 }
 
-func AsDescription(keys, vals []string) string {
+func AsDescription(keys []string, vals []string) string {
 	clr := color.New(color.FgHiBlack)
 	var table string
 	for i := range keys {
