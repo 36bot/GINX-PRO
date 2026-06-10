@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNDICATES // Command Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-void: #0a0a0f;
+            --bg-primary: #0d0d14;
+            --bg-card: #12121c;
+            --bg-elevated: #1a1a2e;
+            --bg-hover: #1f1f35;
+            --border: #2a2a40;
+            --border-glow: #c9a96e;
+            --gold: #c9a96e;
+            --gold-dim: rgba(201, 169, 110, 0.15);
+            --gold-bright: #e0c183;
+            --text-primary: #e8e6e3;
+            --text-secondary: #8a8a9a;
+            --text-muted: #55556a;
+            --green: #4ade80;
+            --green-dim: rgba(74, 222, 128, 0.1);
+            --red: #f87171;
+            --red-dim: rgba(248, 113, 113, 0.1);
+            --cyan: #22d3ee;
+            --cyan-dim: rgba(34, 211, 238, 0.1);
+            --purple: #a78bfa;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg-void);
+            color: var(--text-primary);
+            font-family: 'Inter', system-ui, sans-serif;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        ::selection { background: var(--gold); color: #000; }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--gold); }
+
+        /* ─── Header ─── */
+        .header {
+            background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-primary) 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 1.5rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(20px);
+        }
+        .header-inner {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--gold-dim);
+            border: 1px solid var(--gold);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: var(--gold);
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .logo-text h1 {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--gold);
+            letter-spacing: 0.15em;
+        }
+        .logo-text span {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid var(--border);
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            font-family: 'Inter', sans-serif;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .btn:hover { border-color: var(--gold); color: var(--gold); }
+        .btn-gold {
+            background: var(--gold);
+            color: #000;
+            border-color: var(--gold);
+        }
+        .btn-gold:hover { background: var(--gold-bright); }
+        .btn-sm { padding: 0.35rem 0.65rem; font-size: 0.7rem; }
+
+        /* ─── Stats Grid ─── */
+        .stats {
+            max-width: 1600px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+        }
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.25rem 1.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+        }
+        .stat-card.gold::before { background: linear-gradient(90deg, var(--gold), transparent); }
+        .stat-card.green::before { background: linear-gradient(90deg, var(--green), transparent); }
+        .stat-card.cyan::before { background: linear-gradient(90deg, var(--cyan), transparent); }
+        .stat-card.red::before { background: linear-gradient(90deg, var(--red), transparent); }
+        .stat-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.5rem;
+        }
+        .stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 2rem;
+            font-weight: 700;
+        }
+        .stat-card.gold .stat-value { color: var(--gold); }
+        .stat-card.green .stat-value { color: var(--green); }
+        .stat-card.cyan .stat-value { color: var(--cyan); }
+        .stat-card.red .stat-value { color: var(--red); }
+
+        /* ─── Controls ─── */
+        .controls {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0 2rem 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+        .search-box {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            flex: 1;
+            max-width: 400px;
+        }
+        .search-box svg { color: var(--text-muted); width: 16px; height: 16px; flex-shrink: 0; }
+        .search-box input {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            width: 100%;
+            outline: none;
+            font-family: 'Inter', sans-serif;
+        }
+        .search-box input::placeholder { color: var(--text-muted); }
+
+        /* ─── Table ─── */
+        .table-wrapper {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0 2rem 3rem;
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: var(--bg-card);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+        thead th {
+            background: var(--bg-elevated);
+            padding: 0.85rem 1rem;
+            text-align: left;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+        }
+        tbody tr {
+            transition: background 0.15s;
+        }
+        tbody tr:hover {
+            background: var(--bg-hover);
+        }
+        tbody td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid rgba(42, 42, 64, 0.5);
+            font-size: 0.82rem;
+            vertical-align: top;
+        }
+        tbody tr:last-child td { border-bottom: none; }
+
+        .cell-id {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            color: var(--gold);
+            font-size: 0.8rem;
+        }
+        .cell-phishlet {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: var(--purple);
+            color: #000;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .cell-cred {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            color: var(--text-primary);
+            word-break: break-all;
+        }
+        .cell-cred.has-value { color: var(--green); }
+        .cell-cred.empty { color: var(--text-muted); font-style: italic; }
+        .cell-ip {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            color: var(--cyan);
+        }
+        .cell-ua {
+            max-width: 250px;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .cell-ua:hover {
+            white-space: normal;
+            word-break: break-word;
+        }
+        .cell-time {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        /* Token actions */
+        .token-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .token-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 6px;
+            font-size: 0.68rem;
+            font-weight: 600;
+        }
+        .token-badge.has-tokens {
+            background: var(--green-dim);
+            color: var(--green);
+            border: 1px solid rgba(74, 222, 128, 0.2);
+        }
+        .token-badge.no-tokens {
+            background: var(--red-dim);
+            color: var(--red);
+            border: 1px solid rgba(248, 113, 113, 0.2);
+        }
+        .btn-download {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.3rem 0.6rem;
+            background: var(--gold-dim);
+            border: 1px solid rgba(201, 169, 110, 0.3);
+            border-radius: 6px;
+            color: var(--gold);
+            font-size: 0.68rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        .btn-download:hover {
+            background: var(--gold);
+            color: #000;
+        }
+        .btn-copy {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.3rem 0.6rem;
+            background: var(--cyan-dim);
+            border: 1px solid rgba(34, 211, 238, 0.2);
+            border-radius: 6px;
+            color: var(--cyan);
+            font-size: 0.68rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-copy:hover { background: var(--cyan); color: #000; }
+        .btn-copy.copied { background: var(--green); color: #000; border-color: var(--green); }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-muted);
+        }
+        .empty-state svg { width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.3; }
+        .empty-state h3 { font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--gold);
+            color: var(--gold);
+            padding: 0.75rem 1.25rem;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.3s;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .stats { grid-template-columns: repeat(2, 1fr); }
+            .controls { flex-direction: column; }
+            .search-box { max-width: 100%; }
+            .header-inner { flex-direction: column; gap: 1rem; }
+        }
+
+        /* Pulse animation for live indicator */
+        .live-dot {
+            width: 8px; height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4); }
+            50% { box-shadow: 0 0 0 6px rgba(74, 222, 128, 0); }
+        }
+
+        /* Row cred highlight */
+        tr.has-creds td:first-child { border-left: 3px solid var(--green); }
+        tr.has-cookies td:first-child { border-left: 3px solid var(--gold); }
+
+        #loginScreen{position:fixed;inset:0;background:var(--bg-void);z-index:10000;display:flex;align-items:center;justify-content:center;gap:1.5rem;flex-direction:column}
+        #loginScreen.hidden{display:none !important}
+        .login-card{background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2.5rem 3rem;width:360px;max-width:90vw;text-align:center}
+        .login-card h2{font-family:'JetBrains Mono',monospace;font-size:1rem;color:var(--gold);letter-spacing:.15em;margin-bottom:1.5rem}
+        .login-card input{width:100%;padding:.75rem 1rem;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:.9rem;outline:none;margin-bottom:1rem}
+        .login-card input:focus{border-color:var(--gold)}
+        .login-card button{width:100%;padding:.75rem;background:var(--gold);color:#000;border:none;border-radius:8px;font-weight:700;font-size:.9rem;cursor:pointer}
+        .login-card button:hover{background:var(--gold-bright)}
+        .login-err{color:var(--red);font-size:.8rem;display:none;margin-top:.5rem}
+        .btn-outline{background:transparent;border:1px solid var(--red);color:var(--red)}
+        .btn-outline:hover{background:var(--red);color:#000}
+        #pwModal{display:none;position:fixed;inset:0;background:rgba(10,10,15,.9);z-index:9999;align-items:center;justify-content:center}
+        #pwModal.show{display:flex !important}
+        .modal-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:1.5rem 2rem;width:340px}
+        .modal-card h3{font-size:.85rem;color:var(--gold);margin-bottom:1rem;font-weight:600}
+        .modal-card input{width:100%;padding:.6rem;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);margin-bottom:.5rem;outline:none}
+        .modal-card input:focus{border-color:var(--gold)}
+        .modal-btns{display:flex;gap:.5rem;margin-top:.5rem}
+        .modal-btns .btn{flex:1;justify-content:center}
+        .pw-result{font-size:.75rem;margin-top:.75rem;display:none}
+
+    </style>
+</head>
+<body>
+
+    <!-- Login Screen -->
+    <div id="loginScreen">
+        <div class="login-card">
+            <div class="logo-icon" style="margin:0 auto 1rem;width:50px;height:50px;font-size:22px">S</div>
+            <h2>SYNDICATES</h2>
+            <input id="loginInput" type="password" placeholder="Enter password..." onkeydown="if(event.key==='Enter')doLogin()">
+            <button onclick="doLogin()">Sign In</button>
+            <div class="login-err" id="loginErr">Invalid password</div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <div class="logo-icon">S</div>
+                <div class="logo-text">
+                    <h1>SYNDICATES</h1>
+                    <span>Command Center // {{.PageTitle}}</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <span style="font-size:0.75rem;color:var(--text-muted);">
+                    <span class="live-dot"></span>LIVE
+                </span>
+                <button class="btn" onclick="location.reload();">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                    Refresh
+                </button>
+                <button class="btn btn-gold" onclick="downloadAllCookies();">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                    Export All
+                </button>
+                <button class="btn btn-gold btn-sm" onclick="showPwModal()" style="white-space:nowrap">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    Change Admin Password
+                </button>
+                <button class="btn btn-outline btn-sm" onclick="doLogout()">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                    Logout
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Modal -->
+    <div id="pwModal" onclick="if(event.target===this)closePwModal()">
+        <div class="modal-card">
+            <h3>CHANGE ADMIN PASSWORD</h3>
+            <input id="pwOld" type="password" placeholder="Current password">
+            <input id="pwNew" type="password" placeholder="New password (min 4 chars)">
+            <div class="modal-btns">
+                <button class="btn btn-gold btn-sm" onclick="doChangePw()">Update</button>
+                <button class="btn btn-sm" onclick="closePwModal()" style="border-color:var(--red);color:var(--red)">Cancel</button>
+            </div>
+            <div class="pw-result" id="pwResult"></div>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats" id="stats">
+        <div class="stat-card gold">
+            <div class="stat-label">Total Sessions</div>
+            <div class="stat-value" id="stat-total">0</div>
+        </div>
+        <div class="stat-card green">
+            <div class="stat-label">With Credentials</div>
+            <div class="stat-value" id="stat-creds">0</div>
+        </div>
+        <div class="stat-card cyan">
+            <div class="stat-label">With Cookies</div>
+            <div class="stat-value" id="stat-cookies">0</div>
+        </div>
+        <div class="stat-card red">
+            <div class="stat-label">Pending</div>
+            <div class="stat-value" id="stat-pending">0</div>
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+        <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" id="searchInput" placeholder="Search by email, IP, phishlet..." oninput="filterTable()">
+        </div>
+        <div style="display:flex;gap:0.5rem;">
+            <button class="btn btn-sm" onclick="filterBy('all')">All</button>
+            <button class="btn btn-sm" onclick="filterBy('creds')">With Creds</button>
+            <button class="btn btn-sm" onclick="filterBy('cookies')">With Cookies</button>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrapper">
+        <table id="sessionTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Phishlet</th>
+                    <th>Email / Username</th>
+                    <th>Password</th>
+                    <th>Tokens / Cookies</th>
+                    <th>IP Address</th>
+                    <th>Device</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                {{range .Sessions}}
+                <tr data-username="{{.Username}}" data-password="{{.Password}}" data-tokens="{{.Tokens}}" data-ip="{{.Remote_addr}}" class="{{if .Username}}has-creds{{end}}">
+                    <td><span class="cell-id">#{{.ID}}</span></td>
+                    <td><span class="cell-phishlet">{{.Phishlet}}</span></td>
+                    <td>
+                        <span class="cell-cred {{if .Username}}has-value{{else}}empty{{end}}">
+                            {{if .Username}}{{.Username}}{{else}}waiting...{{end}}
+                        </span>
+                        {{if .Username}}<br><button class="btn-copy" onclick="copyText('{{.Username}}', this)" style="margin-top:4px;">Copy</button>{{end}}
+                    </td>
+                    <td>
+                        <span class="cell-cred {{if .Password}}has-value{{else}}empty{{end}}">
+                            {{if .Password}}{{.Password}}{{else}}&mdash;{{end}}
+                        </span>
+                        {{if .Password}}<br><button class="btn-copy" onclick="copyText('{{.Password}}', this)" style="margin-top:4px;">Copy</button>{{end}}
+                    </td>
+                    <td>
+                        <div class="token-actions">
+                            {{if .Tokens}}
+                                <span class="token-badge has-tokens">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
+                                    Captured
+                                </span>
+                                <a class="btn-download" href="data:application/json;charset=utf-8,{{.Tokens}}" download="{{.Username}}-cookies.json">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                                    Download JSON
+                                </a>
+                                <button class="btn-copy" onclick="copyText(decodeURIComponent('{{.Tokens}}'), this)">Copy Cookies</button>
+                            {{else}}
+                                <span class="token-badge no-tokens">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                                    No Tokens
+                                </span>
+                            {{end}}
+                        </div>
+                    </td>
+                    <td><span class="cell-ip">{{.Remote_addr}}</span></td>
+                    <td><span class="cell-ua" title="{{.Useragent}}">{{.Useragent}}</span></td>
+                    <td><span class="cell-time" data-ts="{{.Update_time}}">{{.Update_time}}</span></td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">Copied to clipboard</div>
+
+    <script>
+        // ─── Stats ───
+        function updateStats() {
+            const rows = document.querySelectorAll('#tableBody tr');
+            let total = 0, creds = 0, cookies = 0, pending = 0;
+            rows.forEach(r => {
+                total++;
+                const u = r.dataset.username;
+                const t = r.dataset.tokens;
+                if (u) creds++;
+                if (t && t.length > 10) { cookies++; r.classList.add('has-cookies'); }
+                if (!u) pending++;
+            });
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-creds').textContent = creds;
+            document.getElementById('stat-cookies').textContent = cookies;
+            document.getElementById('stat-pending').textContent = pending;
+        }
+
+        // ─── Timestamps ───
+        function formatTimestamps() {
+            document.querySelectorAll('[data-ts]').forEach(el => {
+                const ts = parseInt(el.dataset.ts);
+                if (ts > 0) {
+                    const d = new Date(ts * 1000);
+                    el.textContent = d.toLocaleString('en-US', {
+                        month: 'short', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit'
+                    });
+                }
+            });
+        }
+
+        // ─── Search ───
+        function filterTable() {
+            const q = document.getElementById('searchInput').value.toLowerCase();
+            document.querySelectorAll('#tableBody tr').forEach(r => {
+                r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
+            });
+        }
+
+        // ─── Filter buttons ───
+        function filterBy(type) {
+            document.querySelectorAll('#tableBody tr').forEach(r => {
+                if (type === 'all') { r.style.display = ''; return; }
+                if (type === 'creds') { r.style.display = r.dataset.username ? '' : 'none'; return; }
+                if (type === 'cookies') {
+                    const t = r.dataset.tokens;
+                    r.style.display = (t && t.length > 10) ? '' : 'none';
+                }
+            });
+        }
+
+        // ─── Copy ───
+        function copyText(text, btn) {
+            navigator.clipboard.writeText(text).then(() => {
+                if (btn) {
+                    const orig = btn.textContent;
+                    btn.textContent = 'Copied!';
+                    btn.classList.add('copied');
+                    setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1500);
+                }
+                showToast('Copied to clipboard');
+            });
+        }
+
+        // ─── Toast ───
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 2000);
+        }
+
+        // ─── Download All Cookies ───
+        function downloadAllCookies() {
+            const rows = document.querySelectorAll('#tableBody tr');
+            let allData = [];
+            rows.forEach(r => {
+                const u = r.dataset.username;
+                const t = r.dataset.tokens;
+                if (u && t && t.length > 10) {
+                    allData.push({ email: u, cookies: t });
+                }
+            });
+            if (allData.length === 0) {
+                showToast('No cookies to export');
+                return;
+            }
+            const blob = new Blob([JSON.stringify(allData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'syndicates-captures-' + new Date().toISOString().slice(0, 10) + '.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('Exported ' + allData.length + ' captures');
+        }
+
+        // ─── Auto-refresh ───
+        let autoRefresh = null;
+        function toggleAutoRefresh() {
+            if (autoRefresh) {
+                clearInterval(autoRefresh);
+                autoRefresh = null;
+            } else {
+                autoRefresh = setInterval(() => location.reload(), 30000);
+            }
+        }
+
+        // ─── Init ───
+        updateStats();
+        formatTimestamps();
+
+        var __pw = localStorage.getItem('_p') || 'admin';
+        var __sk = 'ss';
+        function doLogin() {
+            var p = document.getElementById('loginInput').value;
+            if (!p) return;
+            if (p === __pw) {
+                localStorage.setItem(__sk, '1');
+                document.getElementById('loginScreen').classList.add('hidden');
+            } else {
+                document.getElementById('loginErr').style.display = 'block';
+            }
+        }
+        function doLogout() {
+            localStorage.removeItem(__sk);
+            location.reload();
+        }
+        (function() {
+            if (localStorage.getItem(__sk) === '1') {
+                document.getElementById('loginScreen').classList.add('hidden');
+            }
+        })();
+        function showPwModal() {
+            document.getElementById('pwModal').classList.add('show');
+            document.getElementById('pwOld').value = '';
+            document.getElementById('pwNew').value = '';
+            document.getElementById('pwResult').style.display = 'none';
+        }
+        function closePwModal() {
+            document.getElementById('pwModal').classList.remove('show');
+        }
+        function doChangePw() {
+            var o = document.getElementById('pwOld').value;
+            var n = document.getElementById('pwNew').value;
+            var r = document.getElementById('pwResult');
+            if (!o || !n) { r.style.display='block'; r.style.color='var(--red)'; r.textContent='Fill both fields'; return; }
+            if (n.length < 4) { r.style.display='block'; r.style.color='var(--red)'; r.textContent='Minimum 4 characters'; return; }
+            if (o !== __pw) { r.style.display='block'; r.style.color='var(--red)'; r.textContent='Current password incorrect'; return; }
+            __pw = n;
+            localStorage.setItem('_p', n);
+            localStorage.removeItem(__sk);
+            r.style.display = 'block'; r.style.color = 'var(--green)'; r.textContent = 'Password changed. Re-login with new password...';
+            setTimeout(function() {
+                document.getElementById('loginScreen').classList.remove('hidden');
+                document.getElementById('pwModal').classList.remove('show');
+            }, 2000);
+        }
+
+    </script>
+</body>
+</html>

