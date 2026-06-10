@@ -192,6 +192,14 @@ func main() {
 	}
 
 	hp, _ := core.NewHttpProxy(cfg.GetServerBindIP(), cfg.GetHttpsPort(), cfg, crt_db, db, bl, *developer_mode)
+
+	ja4 := core.NewJA4Fingerprinter()
+	if ja4 != nil {
+		hp.SetJA4(ja4)
+	} else {
+		log.Warning("ja4: not available: %v", err)
+	}
+
 	hp.Start()
 
 	t, err := core.NewTerminal(hp, cfg, crt_db, db, *developer_mode)

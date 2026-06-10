@@ -1712,3 +1712,20 @@ func (c *Config) DeleteNotifier(name string) error {
 	}
 	return fmt.Errorf("notifier '%s' not found", name)
 }
+
+// ============================================================================
+// JA4 config methods
+// ============================================================================
+func (c *Config) IsJA4Enabled() bool {
+	return c.botguardConfig.Enabled
+}
+
+func (c *Config) SetJA4Enabled(enabled bool) {
+	c.botguardConfig.Enabled = enabled
+}
+
+func (c *Config) IsJA4AutoBlockEnabled() bool {
+	return false
+}
+
+func (c *Config) SetJA4AutoBlock(enabled bool) {}
